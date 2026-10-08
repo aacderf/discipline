@@ -142,11 +142,22 @@ public final class Scheduler {
             new Intent(c, TickReceiver.class),
             PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
     next = Math.max(now + 1000, next);
-    boolean exact = Build.VERSION.SDK_INT < 31 || a.canScheduleExactAlarms();
+    if (a == null) return;
+    boolean exact = AndroidCompat.exactAlarmsAllowed(c);
     if (next == lastScheduled && exact == lastExact) return;
+    try {
+      if (exact) a.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, next, pi);
+      else a.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, next, pi);
+    } catch (SecurityException denied) {
+      // Grants may be revoked between the check and scheduling, including by OEM app managers.
+      exact = false;
+      try { a.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, next, pi); }
+      catch (SecurityException alsoDenied) {
+        android.util.Log.w("DisciplineCompat", "Reminder scheduling was denied", alsoDenied);
+        return;
+      }
+    }
     lastScheduled = next;
     lastExact = exact;
-    if (exact) a.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, next, pi);
-    else a.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, next, pi);
   }
 }

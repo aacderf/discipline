@@ -57,6 +57,8 @@ internal fun AppLimitsScreen(activity: ComposeMainActivity, onBack: () -> Unit,
         Panel {
             Text("拦截状态", style = MaterialTheme.typography.titleMedium)
             Caption("当前：${activity.appRestrictionMode()}")
+            val serviceProblem = AndroidCompat.serviceProblem(activity, FallbackBlockService::class.java)
+            if (serviceProblem.isNotBlank()) Caption(serviceProblem)
             Caption(if (fallbackRunning) "备用拦截运行中；无障碍服务正常时由它优先处理。"
                 else if (fallbackEnabled) "备用拦截已开启，等待权限或已启用规则。"
                 else "无障碍服务负责及时拦截；可另外开启备用拦截。")
@@ -71,10 +73,10 @@ internal fun AppLimitsScreen(activity: ComposeMainActivity, onBack: () -> Unit,
                 } else fallbackConfirm = true
             }
             if (fallbackEnabled && !access) Secondary("授权使用情况访问") {
-                activity.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                AndroidCompat.openSettings(activity, Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
             }
             if (fallbackEnabled && !overlayAccess) Secondary("授权系统悬浮窗") {
-                activity.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                AndroidCompat.openSettings(activity, Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                     Uri.parse("package:${activity.packageName}")))
             }
         }
@@ -82,7 +84,7 @@ internal fun AppLimitsScreen(activity: ComposeMainActivity, onBack: () -> Unit,
             Text("需要使用情况访问", style = MaterialTheme.typography.titleMedium)
             Caption("授权后才能读取实际使用时长。未授权时不会按时长拦截。")
             Secondary("前往系统授权") {
-                activity.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                AndroidCompat.openSettings(activity, Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
             }
         }
         if (limits.isEmpty()) Panel {
@@ -170,8 +172,8 @@ internal fun AppLimitsScreen(activity: ComposeMainActivity, onBack: () -> Unit,
                 activity.db.put("state", settings)
             }) {
                 FallbackBlockService.sync(activity)
-                if (!access) activity.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
-                else if (!overlayAccess) activity.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                if (!access) AndroidCompat.openSettings(activity, Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                else if (!overlayAccess) AndroidCompat.openSettings(activity, Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                     Uri.parse("package:${activity.packageName}")))
             }
         }) { fallbackConfirm = false }

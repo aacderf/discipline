@@ -84,10 +84,7 @@ public final class FallbackBlockService extends Service {
     AppUsageLimits.invalidate();
     Intent service = new Intent(context, FallbackBlockService.class);
     if (requested(context) && ready(context) && hasRule(context)) {
-      try { context.startForegroundService(service); }
-      catch (RuntimeException ex) {
-        android.util.Log.e("DisciplineFallback", "Could not start optional guard", ex);
-      }
+      AndroidCompat.startService(context, service);
     } else context.stopService(service);
   }
 
@@ -96,10 +93,10 @@ public final class FallbackBlockService extends Service {
   }
 
   @Override public int onStartCommand(Intent intent, int flags, int startId) {
-    if (Build.VERSION.SDK_INT >= 34)
-      startForeground(NOTIFICATION_ID, Scheduler.appLimitsStatus(this),
-          ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
-    else startForeground(NOTIFICATION_ID, Scheduler.appLimitsStatus(this));
+    Scheduler.channels(this);
+    if (!AndroidCompat.promote(this, NOTIFICATION_ID, Scheduler.appLimitsStatus(this),
+        Build.VERSION.SDK_INT >= 34 ? ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE : 0))
+      return START_NOT_STICKY;
     if (!requested(this) || !ready(this) || !hasRule(this)) {
       stopSelf(startId);
       return START_NOT_STICKY;

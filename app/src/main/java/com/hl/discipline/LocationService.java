@@ -74,7 +74,10 @@ public final class LocationService extends Service implements LocationListener {
   @Override
   public int onStartCommand(Intent i, int flags, int id) {
     try {
-      startForeground(1, Scheduler.status(this, "等待定位 · 手机留在地点内才会计时"));
+      Scheduler.channels(this);
+      if (!AndroidCompat.promote(this, 1, Scheduler.status(this, "等待定位 · 手机留在地点内才会计时"),
+          Build.VERSION.SDK_INT >= 29 ? android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION : 0))
+        return START_NOT_STICKY;
       manager.removeUpdates(this);
       if (!PositionSource.consented(this) && fused != null) { PositionSource.close(fused); fused = null; }
       for (String provider :
@@ -100,8 +103,14 @@ public final class LocationService extends Service implements LocationListener {
       running = true;
     } catch (SecurityException ex) {
       running = false;
-      db.log("gap", "缺少定位权限，监测未启动");
+      AndroidCompat.serviceFailed(this, getClass().getName(), ex);
       stopSelf();
+      return START_NOT_STICKY;
+    } catch (RuntimeException ex) {
+      running = false;
+      AndroidCompat.serviceFailed(this, getClass().getName(), ex);
+      stopSelf();
+      return START_NOT_STICKY;
     }
     return START_STICKY;
   }
@@ -293,7 +302,8 @@ public final class LocationService extends Service implements LocationListener {
   public void onDestroy() {
     running = false;
     handler.removeCallbacks(pulse);
-    if (manager != null) manager.removeUpdates(this);
+    if (manager != null) try { manager.removeUpdates(this); }
+    catch (SecurityException ignored) { /* Location may have been revoked while running. */ }
     PositionSource.close(fused); fused = null;
     if (db != null) {
       JSONObject l = db.one("state", "location");

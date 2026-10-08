@@ -247,14 +247,16 @@ internal fun CompanionSettings(activity: ComposeMainActivity) {
                 Store.set(settings, "companionEnabled", value)
                 activity.db.put("state", settings)
             }
-            if (value && !access) activity.startActivity(android.content.Intent(
+            if (value && !access) AndroidCompat.openSettings(activity, android.content.Intent(
                 android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                 android.net.Uri.parse("package:${activity.packageName}")))
         })
     }
     if (enabled) {
+        val problem = AndroidCompat.serviceProblem(activity, FocusCompanionService::class.java)
+        if (problem.isNotBlank()) Caption(problem)
         Caption("双击完全隐藏，不占用屏幕触控区域。点常驻通知恢复；也可在系统快捷开关中添加「自律悬浮球」。")
-        if (!access) Secondary("授权悬浮窗") { activity.startActivity(android.content.Intent(
+        if (!access) Secondary("授权悬浮窗") { AndroidCompat.openSettings(activity, android.content.Intent(
             android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
             android.net.Uri.parse("package:${activity.packageName}"))) }
         else TextButton(onClick = { FocusCompanionService.restore(activity) }) { Text("显示悬浮球") }

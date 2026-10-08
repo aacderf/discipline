@@ -2,7 +2,7 @@
 
 [![Android build](https://github.com/aacderf/discipline/actions/workflows/android.yml/badge.svg)](https://github.com/aacderf/discipline/actions/workflows/android.yml)
 
-Android 本地自律工具，基于 Kotlin / Java 与 Jetpack Compose。本仓库公开 0.11.5 的完整 App 源码、测试、资源与构建流程。
+Android 本地自律工具，基于 Kotlin / Java 与 Jetpack Compose。本仓库公开 0.11.6 的完整 App 源码、测试、资源与构建流程。
 
 ## 功能
 
@@ -87,6 +87,14 @@ Push 到 `main`、Pull Request 或手动运行 [Android build](https://github.co
 默认 CI 不使用任何地图或签名 Secret，因此 Fork PR 也能执行编译和单元测试。上传的是独立 QA 包，不是作者签名的正式发行版。所有 Action 固定到提交 SHA。
 
 ## 设备测试与运行边界
+
+支持 Android 8.0（API 26）及以上的 APK 系统，不绑定 iQOO，也不要求 Google Play 服务。使用通用 APK，保留 ARM64、ARMv7 与 AndroidX 提供的 x86 / x86_64 库；地图 SDK 原生渲染库提供 ARM64 / ARMv7。
+
+0.11.6 更新高德合包至 `11.3.100_loc11.3.000_sea9.8.1`，替换旧版仅 4KB 对齐的地图库。`tools/check-native-pages.ps1 -Apk <apk-path>` 检查 APK 内 64 位 ELF 的 LOAD 对齐；这不替代 ZIP 对齐与实际 16KB 设备测试。
+
+启动先呈现页面再更新任务和提醒；后台服务被拒绝时记录运行问题，不要求用户先授予全部权限才能打开。精确闹钟授权在调度时被撤销则回退普通闹钟。部分厂商授权页不可用时回退到应用详情。
+
+到“设置 → 运行与权限 → 本机后台运行”查看对应品牌的提示。小米 / Redmi / POCO 检查自启动、后台省电“不限制”，悬浮功能还需厂商后台弹出权限与 Android 悬浮窗授权。vivo、OPPO / 一加 / realme、华为 / 荣耀安卓系统、三星和其他品牌有各自提示；菜单会随系统版本变化。拒绝这些后台权限不妨碍前台计划、课表和计时。
 
 设备测试源码在 `app/src/androidTest`。包含清空 QA 测试数据的用例，只在独立 `.qa` 包与专用模拟器运行：
 

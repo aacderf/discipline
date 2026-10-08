@@ -35,10 +35,7 @@ public final class TickReceiver extends BroadcastReceiver {
               || c.checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
                   == PackageManager.PERMISSION_GRANTED;
       if (fine && bg) {
-        try {
-          c.startForegroundService(new Intent(c, LocationService.class));
-        } catch (RuntimeException ex) {
-          db.log("gap", "开机后未能恢复地点监测，请打开应用");
+        if (!AndroidCompat.startService(c, new Intent(c, LocationService.class))) {
           Scheduler.notify(c, 302, "请恢复地点监测", "打开自律后继续监测");
         }
       } else Scheduler.notify(c, 302, "请恢复地点监测", "定位授权不足，请打开自律检查权限");

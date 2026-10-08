@@ -95,7 +95,7 @@ private fun StatusLine(title: String, value: String) {
 }
 
 private fun ComposeMainActivity.openAppSettings() {
-    startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
+    AndroidCompat.openSettings(this, Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
 }
 
 internal fun ComposeMainActivity.accessibilityStatus(): String {
@@ -127,7 +127,7 @@ internal fun SettingsScreen(activity: ComposeMainActivity, nav: NavHostControlle
     val fine = activity.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
     val background = Build.VERSION.SDK_INT < 29 || activity.checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED
     val notifications = activity.getSystemService(NotificationManager::class.java).areNotificationsEnabled()
-    val alarm = Build.VERSION.SDK_INT < 31 || activity.getSystemService(AlarmManager::class.java).canScheduleExactAlarms()
+    val alarm = AndroidCompat.exactAlarmsAllowed(activity)
     val battery = activity.getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(activity.packageName)
     val access = activity.accessibilityStatus()
     val usageAccess = AppUsageLimits.hasAccess(activity)
@@ -157,12 +157,13 @@ internal fun SettingsScreen(activity: ComposeMainActivity, nav: NavHostControlle
     val pending = buildList {
         if (monitoring && !fine) add("精确定位")
         if (monitoring && !background) add("后台定位")
+        if (monitoring && fine && AndroidCompat.serviceProblem(activity, LocationService::class.java).isNotBlank()) add("地点后台运行")
         if (!notifications) add("通知")
         if (!alarm) add("准时提醒")
         if ((!settings.optBoolean("trial") || appLimitCount > 0) &&
             access != "运行中" && !fallbackRunning) add("应用限制服务")
         if (appLimitCount > 0 && !usageAccess) add("使用情况访问")
-        if (fallbackEnabled && !overlayAccess) add("系统悬浮窗")
+        if ((fallbackEnabled || settings.optBoolean("companionEnabled")) && !overlayAccess) add("系统悬浮窗")
         if (monitoring && !battery) add("电池与后台")
     }
     val currentRoute = nav.currentBackStackEntryAsState().value?.destination?.route
@@ -175,13 +176,14 @@ internal fun SettingsScreen(activity: ComposeMainActivity, nav: NavHostControlle
     if (shown == 1) {
         Screen("运行与权限", onBack = { permissionsOpen = false }, scrollState = permissionsScroll) {
             Caption(if (pending.isEmpty()) "运行条件已就绪" else "${pending.size} 项需要处理：${pending.joinToString("、")}")
+            Caption("按需要开启功能与授权；未授权时仍可管理计划、课表和使用前台专注计时。")
             Section("地点监测")
             SettingRow("地点监测开关", if (monitoring) "已开启" else "未开启",
                 "开启后按已保存地点和计划累计到场", statusFeedback = true) {
                 if (!fine) activity.requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION), 30)
                 else if (monitoring && LocationService.running) monitorConfirm = true
                 else activity.act { Store.set(settings, "monitor", true); activity.db.put("state", settings)
-                    activity.startForegroundService(Intent(activity, LocationService::class.java)) }
+                    AndroidCompat.startService(activity, Intent(activity, LocationService::class.java)) }
             }
             SettingRow("精确定位", if (fine) "已授权" else "未授权", "用于地点计时", statusFeedback = true) {
                 if (!fine) activity.requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION), 30)
@@ -194,7 +196,7 @@ internal fun SettingsScreen(activity: ComposeMainActivity, nav: NavHostControlle
                 if (PositionSource.consented(activity)) activity.act {
                     activity.getSharedPreferences("PlaceActivity", 0).edit()
                         .putBoolean("locationPrivacyAccepted", false).apply()
-                    if (monitoring && fine) activity.startForegroundService(Intent(activity, LocationService::class.java))
+                    if (monitoring && fine) AndroidCompat.startService(activity, Intent(activity, LocationService::class.java))
                 } else fusionNotice = true
             }
             if (location != null) Caption("${location.optString("source", "系统定位")} · 估计误差 ${numberText(location.optDouble("accuracy"))} 米\n${location.optString("status")}")
@@ -202,22 +204,36 @@ internal fun SettingsScreen(activity: ComposeMainActivity, nav: NavHostControlle
             SettingRow("应用限制服务", access, statusFeedback = true) { accessGuide = true }
             SettingRow("使用情况访问", if (usageAccess) "已授权" else "未授权",
                 "按应用累计每日与每周用量", statusFeedback = true) {
-                activity.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                AndroidCompat.openSettings(activity, Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
             }
             if (fallbackEnabled) SettingRow("系统悬浮窗", if (overlayAccess) "已授权" else "未授权",
                 "仅用于无障碍服务断开后的尽力备用拦截", statusFeedback = true) {
-                activity.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                AndroidCompat.openSettings(activity, Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                     Uri.parse("package:${activity.packageName}")))
             }
             SettingRow("通知", if (notifications) "已开启" else "未开启", statusFeedback = true) {
                 if (Build.VERSION.SDK_INT >= 33 && !notifications) activity.requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 31)
-                else activity.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, activity.packageName))
+                else AndroidCompat.openSettings(activity, Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, activity.packageName))
             }
             SettingRow("准时提醒", if (alarm) "已允许" else "可能延迟", statusFeedback = true) {
-                if (Build.VERSION.SDK_INT >= 31) activity.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:${activity.packageName}")))
+                if (Build.VERSION.SDK_INT >= 31) AndroidCompat.openSettings(activity, Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:${activity.packageName}")))
             }
             SettingRow("电池与后台", if (battery) "已豁免" else "系统管理", statusFeedback = true) {
-                activity.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                AndroidCompat.openSettings(activity, Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+            }
+            Section("本机后台运行")
+            SettingRow("后台运行与自启动", "系统设置", AndroidCompat.backgroundHint()) {
+                activity.openAppSettings()
+            }
+            Caption("菜单名称随系统版本变化；厂商后台弹出权限不能替代 Android 悬浮窗授权。")
+            listOf(LocationService::class.java, FocusCompanionService::class.java,
+                FallbackBlockService::class.java).forEach { service ->
+                val problem = AndroidCompat.serviceProblem(activity, service)
+                if (problem.isNotBlank()) Caption(when (service) {
+                    LocationService::class.java -> "地点监测：$problem"
+                    FocusCompanionService::class.java -> "专注与悬浮球：$problem"
+                    else -> "备用拦截：$problem"
+                })
             }
         }
     } else Screen("设置", onBack = { nav.popBackStack() }, scrollState = settingsScroll) {
@@ -313,7 +329,7 @@ internal fun SettingsScreen(activity: ComposeMainActivity, nav: NavHostControlle
     if (fusionNotice) FusionLocationNotice(accept = {
         activity.getSharedPreferences("PlaceActivity", 0).edit().putBoolean("locationPrivacyAccepted", true).apply()
         fusionNotice = false
-        activity.act { if (monitoring && fine) activity.startForegroundService(Intent(activity, LocationService::class.java)) }
+        activity.act { if (monitoring && fine) AndroidCompat.startService(activity, Intent(activity, LocationService::class.java)) }
     }, systemOnly = { fusionNotice = false }, dismiss = { fusionNotice = false })
     if (trialConfirm) ConfirmDialog(if (settings.optBoolean("trial")) "启用任务拦截？" else "仅记录任务限制？",
         "仅影响此后触发的任务限制。已产生的限制保持原样，每日与每周应用限额独立生效。", {
@@ -352,7 +368,7 @@ internal fun SettingsScreen(activity: ComposeMainActivity, nav: NavHostControlle
         backupNotice = false; activity.chooseBackup()
     }) { backupNotice = false }
     if (accessGuide) ConfirmDialog("开启应用限制", "自律使用无障碍服务识别前台应用，并在约定时段显示拦截页。不读取聊天和输入内容。若开关立即关闭，请先在应用详情中允许受限设置。", {
-        accessGuide = false; activity.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        accessGuide = false; AndroidCompat.openSettings(activity, Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
     }) { accessGuide = false }
     val prepared = activity.preparedRestore
     if (prepared != null) ConfirmDialog("恢复完整备份？", "将替换全部计划、记录和设置。备份含 ${prepared.optJSONArray("plans")?.length() ?: 0} 个计划、${prepared.optJSONArray("sessions")?.length() ?: 0} 段计时。恢复前会保存当前数据。", {

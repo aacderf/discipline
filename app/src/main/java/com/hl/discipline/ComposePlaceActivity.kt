@@ -85,6 +85,7 @@ class ComposePlaceActivity : ComponentActivity() {
     private var searching by mutableStateOf(false)
     private var resultItems by mutableStateOf<List<PoiItem>>(emptyList())
     private var privacyAccepted by mutableStateOf(false)
+    private var mapError by mutableStateOf("")
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -127,6 +128,7 @@ class ComposePlaceActivity : ComponentActivity() {
 
     private fun createMap(state: Bundle?) {
         if (mapView != null) return
+        try {
         MapsInitializer.updatePrivacyShow(this, true, true)
         MapsInitializer.updatePrivacyAgree(this, true)
         ServiceSettings.updatePrivacyShow(this, true, true)
@@ -177,6 +179,18 @@ class ComposePlaceActivity : ComponentActivity() {
         }
         renderShape()
         if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) mapView?.onResume()
+        } catch (error: RuntimeException) {
+            mapUnavailable(error)
+        } catch (error: LinkageError) {
+            mapUnavailable(error)
+        }
+    }
+
+    private fun mapUnavailable(error: Throwable) {
+        android.util.Log.e("DisciplineCompat", "Map initialization unavailable", error)
+        try { mapView?.onDestroy() } catch (_: RuntimeException) { } catch (_: LinkageError) { }
+        mapView = null; map = null
+        mapError = "地图暂不可用，请检查网络后重试；计划、课表与专注仍可正常使用。"
     }
 
     override fun onResume() { super.onResume(); mapView?.onResume() }
@@ -205,6 +219,13 @@ class ComposePlaceActivity : ComponentActivity() {
     @Composable
     private fun MapScreen() {
         SystemBars(this)
+        if (mapError.isNotBlank()) {
+            Screen("地图与地点", onBack = { finish() }) {
+                Caption(mapError)
+                Secondary("重试地图") { mapError = ""; createMap(null) }
+            }
+            return
+        }
         if (!BuildConfig.AMAP_CONFIGURED) {
             Screen("地图与地点", onBack = { finish() }) {
                 Section("地图服务未配置")
@@ -576,6 +597,10 @@ class ComposePlaceActivity : ComponentActivity() {
         else systemCurrent(generation)
     }
     private fun systemCurrent(generation: Int) {
+        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            cancelLocation(); status = "定位权限已关闭，可直接移动地图后手绘圈选"
+            return
+        }
         val manager = getSystemService(LocationManager::class.java)
         try {
             val best = manager.getProviders(true).mapNotNull { manager.getLastKnownLocation(it) }
@@ -588,7 +613,8 @@ class ComposePlaceActivity : ComponentActivity() {
                     if (generation == locateGeneration && location != null) position(location, false, generation)
                 }
             } else { cancelLocation(); status = "请先开启地点监测，取得准确位置后再试" }
-        } catch (_: RuntimeException) { cancelLocation(); status = "定位暂不可用，可直接移动地图后手绘圈选" }
+        } catch (_: SecurityException) { cancelLocation(); status = "定位权限已关闭，可直接移动地图后手绘圈选" }
+        catch (_: RuntimeException) { cancelLocation(); status = "定位暂不可用，可直接移动地图后手绘圈选" }
     }
     private fun freshAccurate(location: Location): Boolean {
         val sample = if (location is com.amap.api.location.AMapLocation)

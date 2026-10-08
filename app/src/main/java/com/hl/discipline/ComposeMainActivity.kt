@@ -161,6 +161,7 @@ class ComposeMainActivity : ComponentActivity() {
     internal var launchReady by mutableStateOf(false)
     internal var launchOrigin by mutableStateOf<Offset?>(null)
     internal var launchIconWidth by mutableFloatStateOf(0f)
+    private val splashFallback = Runnable { launchReady = true }
     internal lateinit var db: Store
     internal lateinit var engine: Engine
     internal var revision by mutableIntStateOf(0)
@@ -233,6 +234,7 @@ class ComposeMainActivity : ComponentActivity() {
         launchReady = !launchIntro || android.os.Build.VERSION.SDK_INT < 31
         if (launchIntro && android.os.Build.VERSION.SDK_INT >= 31) {
             splashScreen.setOnExitAnimationListener { splash ->
+                handler.removeCallbacks(splashFallback)
                 splash.iconView?.let { icon ->
                     val position = IntArray(2)
                     icon.getLocationInWindow(position)
@@ -259,10 +261,20 @@ class ComposeMainActivity : ComponentActivity() {
             it in listOf("today", "timetable", "focus", "stats")
         } ?: "today"
         Scheduler.channels(this)
-        engine.tick()
-        Reminders.deliver(this, db, System.currentTimeMillis())
-        Scheduler.schedule(this)
         setContent { DisciplineTheme(themeMode = themeMode) { DisciplineApp(this) } }
+        // OEM splash callbacks and optional system integrations cannot hold the first live frame.
+        if (!launchReady) handler.postDelayed(splashFallback, 1200)
+        ticker.execute {
+            try {
+                engine.tick()
+                Reminders.deliver(this, db, System.currentTimeMillis())
+            } catch (error: Exception) {
+                android.util.Log.e("DisciplineCompose", "Initial refresh failed", error)
+                toast("后台更新暂未完成，可在运行与权限中检查")
+            } finally {
+                handler.post { if (!isFinishing && !isDestroyed) refresh() }
+            }
+        }
     }
 
     override fun onResume() {
@@ -278,8 +290,7 @@ class ComposeMainActivity : ComponentActivity() {
         handler.postDelayed(pulse, 1000)
         if (db.settings().optBoolean("monitor") &&
             checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-            try { startForegroundService(Intent(this, LocationService::class.java)) }
-            catch (e: RuntimeException) { db.log("gap", "地点监测启动失败：${e.message}") }
+            AndroidCompat.startService(this, Intent(this, LocationService::class.java))
         }
     }
 
@@ -292,6 +303,7 @@ class ComposeMainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         handler.removeCallbacks(pulse)
+        handler.removeCallbacks(splashFallback)
         ticker.shutdown()
         super.onDestroy()
     }

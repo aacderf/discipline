@@ -24,11 +24,10 @@ class FocusCompanionService : Service() {
             val wanted = db.one("state", "focus") != null ||
                 (db.settings().optBoolean("companionEnabled") && Settings.canDrawOverlays(context))
             if (!wanted) { context.stopService(Intent(context, FocusCompanionService::class.java)); return }
-            try { context.startForegroundService(Intent(context, FocusCompanionService::class.java)) }
-            catch (error: RuntimeException) { db.log("gap", "专注后台服务未能启动：${error.message}") }
+            AndroidCompat.startService(context, Intent(context, FocusCompanionService::class.java))
         }
         fun restore(context: Context) {
-            context.startForegroundService(Intent(context, FocusCompanionService::class.java).setAction(RESTORE))
+            AndroidCompat.startService(context, Intent(context, FocusCompanionService::class.java).setAction(RESTORE))
         }
     }
     private val handler = Handler(Looper.getMainLooper())
@@ -69,10 +68,7 @@ class FocusCompanionService : Service() {
         super.onCreate()
         db = Store.get(this); engine = Engine(this)
         mode = AppThemeMode.fromValue(db.settings().optString("themeMode", "system"))
-        val display = getSystemService(android.hardware.display.DisplayManager::class.java)
-            .getDisplay(android.view.Display.DEFAULT_DISPLAY)
-        windowContext = if (Build.VERSION.SDK_INT >= 30) createDisplayContext(display)
-            .createWindowContext(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, null) else this
+        windowContext = AndroidCompat.overlayContext(this)
         windows = windowContext.getSystemService(WindowManager::class.java)
         ContextCompat.registerReceiver(this, receiver, IntentFilter().apply {
             addAction(FocusEvents.ACTION); addAction(Intent.ACTION_SCREEN_OFF); addAction(Intent.ACTION_SCREEN_ON)
@@ -81,8 +77,9 @@ class FocusCompanionService : Service() {
     }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Scheduler.channels(this)
-        if (Build.VERSION.SDK_INT >= 34) startForeground(NOTICE, notification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-        else startForeground(NOTICE, notification())
+        if (!AndroidCompat.promote(this, NOTICE, notification(),
+                if (Build.VERSION.SDK_INT >= 34) ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0))
+            return START_NOT_STICKY
         if (intent?.action == RESTORE && Settings.canDrawOverlays(this)) {
             prefs.edit().putBoolean("hidden", false).apply()
             removeBall()
