@@ -1,0 +1,1 @@
+<animated-vector xmlns:android="http://schemas.android.com/apk/res/android" android:drawable="@drawable/ic_morph_play_pause_base"><target android:name="morph" android:animation="@animator/morph_play_pause"/></animated-vector>

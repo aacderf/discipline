@@ -1,0 +1,1 @@
+<animated-vector xmlns:android="http://schemas.android.com/apk/res/android" android:drawable="@drawable/ic_morph_expand_collapse_base"><target android:name="morph" android:animation="@animator/morph_expand_collapse"/></animated-vector>

@@ -1,0 +1,4 @@
+# Obtain your own Android Key from https://lbs.amap.com/ .
+# Register the application ID and signing certificate SHA-1 of YOUR build.
+# Debug application ID: com.hl.discipline.qa ; release: com.hl.discipline.
+key=YOUR_AMAP_ANDROID_KEY

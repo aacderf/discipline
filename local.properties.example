@@ -1,0 +1,3 @@
+# Android Studio normally creates this file. Alternatively use ANDROID_HOME.
+# Windows example; forward slashes also work in Java properties.
+sdk.dir=C:/Android/Sdk

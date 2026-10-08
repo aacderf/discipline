@@ -1,0 +1,109 @@
+# 自律 · Discipline
+
+[![Android build](https://github.com/aacderf/discipline/actions/workflows/android.yml/badge.svg)](https://github.com/aacderf/discipline/actions/workflows/android.yml)
+
+Android 本地自律工具，基于 Kotlin / Java 与 Jetpack Compose。本仓库公开 0.11.5 的完整 App 源码、测试、资源与构建流程。
+
+## 功能
+
+- 今天 / 这周计划、重复任务、置顶、完成、移除与计划管理。
+- 可编辑课表、CSV 导入、日程 / 可缩放周网格、课程和计划提醒。
+- 沙漏专注计时、番茄钟预设、轮次与休息接续、通知及小型悬浮面板。
+- 手绘地点范围、停留计时、60 秒短暂定位漂移宽限、可选融合定位。
+- 每日 / 每周应用限额、任务未完成限制、无障碍拦截与尽力备用模式。
+- 统计、本地备份、浅深色与减少动态效果支持。
+
+公开版使用合成课表示例，不包含个人课表、定位记录、备份、截图、地图 Key 或原始签名。示例学期固定为 2026-08-31 起 18 周；当前课表结构仍按这个学期校验，这是已知限制。
+
+## 构建环境
+
+| 项目 | 版本 |
+| --- | --- |
+| JDK | 21（Java 源码目标 17） |
+| Android SDK Platform | API 37.0：`platforms;android-37.0` |
+| Android Build Tools | 36.0.0 |
+| Gradle Wrapper | 9.3.1 |
+| Android Gradle Plugin | 9.1.1 |
+| Kotlin | 2.4.20 |
+| Compose BOM | 2026.09.00 |
+| 最低 / 目标 Android | API 26 / 36 |
+
+首次构建需要联网。使用仓库中的 Gradle Wrapper，无需全局安装 Gradle。Android Studio 中安装相应 SDK，或执行：
+
+```sh
+sdkmanager 'platforms;android-37.0' 'build-tools;36.0.0' 'platform-tools'
+```
+
+SDK 路径由 Android Studio 生成的 `local.properties` 或 `ANDROID_HOME` 提供，参考 `local.properties.example`。依赖版本固定，Wrapper 配有官方发行包 SHA-256 校验。
+
+### Windows / PowerShell
+
+```powershell
+git clone https://github.com/aacderf/discipline.git
+cd discipline
+.\build.ps1 -Online
+```
+
+此脚本用临时盘符处理 Windows 中文路径，并在结束后移除映射；不会移动或删除源码。默认构建 Debug 并运行单元测试。依赖缓存齐全后可以省略 `-Online` 使用离线模式。
+
+```powershell
+.\build.ps1 -Online -Tasks @('assembleDebug','testDebugUnitTest','assembleDebugAndroidTest')
+```
+
+### Linux / macOS
+
+```sh
+git clone https://github.com/aacderf/discipline.git
+cd discipline
+./gradlew --console=plain :app:assembleDebug :app:testDebugUnitTest
+```
+
+Debug APK：`app/build/outputs/apk/debug/app-debug.apk`。包名 `com.hl.discipline.qa`，用于独立试用。单元测试报告：`app/build/reports/tests/testDebugUnitTest/index.html`。
+
+## 地图与融合定位
+
+不配置 Key 也可构建、运行非地图功能及单元测试；地图和融合定位会显示未配置提示，仍可使用系统定位。实际地图功能需要你自己的高德 Android Key：
+
+1. 复制 `amap.properties.example` 为 `amap.properties`，填写自己的 Key；或在构建环境设置 `AMAP_API_KEY`。环境变量优先。
+2. 在高德控制台登记构建包名与签名证书 SHA-1。Debug 为 `com.hl.discipline.qa`，Release 为 `com.hl.discipline`；证书须使用你自己的构建证书。
+3. 地图与融合定位另需 App 内同意相应隐私说明，以及系统定位授权。
+
+Key 文件被 Git 忽略，不要提交自己的 Key。高德 SDK 与服务遵从其独立条款，不随本项目代码一并变为 MIT 授权。
+
+## Release 与签名
+
+```powershell
+.\build.ps1 -Online -Tasks @('assembleRelease')
+```
+
+未配置签名时生成 `app/build/outputs/apk/release/app-release-unsigned.apk`，不能直接安装。需要签名时自行生成密钥，并按 `keystore.properties.example` 配置本地 `keystore.properties`，再构建 Release。签名材料只保存在你自己的环境中。
+
+本仓库不含作者的原私有签名；你的签名无法覆盖作者原签名安装的正式 App。不要为了测试清除正在使用的正式 App 数据，使用 `.qa` 测试包。
+
+## GitHub Actions
+
+Push 到 `main`、Pull Request 或手动运行 [Android build](https://github.com/aacderf/discipline/actions/workflows/android.yml)：安装 SDK、构建 Debug、运行单元测试并检查未签名 Release 构建。完成后在 Actions 的 Artifacts 下载 `discipline-qa-apk` 和 `unit-test-reports`。
+
+默认 CI 不使用任何地图或签名 Secret，因此 Fork PR 也能执行编译和单元测试。上传的是独立 QA 包，不是作者签名的正式发行版。所有 Action 固定到提交 SHA。
+
+## 设备测试与运行边界
+
+设备测试源码在 `app/src/androidTest`。包含清空 QA 测试数据的用例，只在独立 `.qa` 包与专用模拟器运行：
+
+```sh
+./gradlew :app:connectedDebugAndroidTest
+```
+
+部分测试需要使用情况访问、悬浮窗、定位或无障碍授权及可用地图底图；不会在默认 CI 中声称通过。原项目的实地 GPS 精度、厂商后台保活与完整手绘仍需真机验证。
+
+应用数据本地保存，无账号、无自建服务器；地图、搜索与可选融合定位使用高德网络服务。无障碍权限或服务被撤销时拦截可能失效，备用模式是尽力拦截。普通应用不能阻止系统强行停止或卸载。
+
+## 源码结构
+
+- `app/src/main/java/com/hl/discipline/`：Compose 页面、计时状态、规则、SQLite Store、定位和拦截服务。
+- `app/src/main/res/`：主题、图标、有限状态动画和插画。
+- `app/src/test/`：本地业务规则测试。
+- `app/src/androidTest/`：界面及服务的设备测试。
+- `tools/icons/`：可选开发图标生成器；Android 构建直接使用已提交 XML，无需 Node。
+
+许可证：[MIT](LICENSE)。第三方资源和 SDK 例外见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。构建依据：[GitHub Actions Gradle 文档](https://docs.github.com/en/actions/tutorials/build-and-test-code/java-with-gradle)、[Gradle Wrapper 校验](https://docs.gradle.org/current/userguide/best_practices_security.html)。

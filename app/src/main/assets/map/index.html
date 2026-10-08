@@ -1,0 +1,9 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"><link rel="stylesheet" href="leaflet.css"><style>html,body,#map{height:100%;margin:0;background:#f6f8f4}#error{position:absolute;left:8px;right:8px;top:8px;z-index:900;font:13px sans-serif;background:#fff;padding:8px;display:none}.leaflet-control-attribution{font-size:10px}</style></head><body><div id="map"></div><div id="error">底图加载失败，请检查网络；已保存的地点与计时不受影响。</div><script src="leaflet.js"></script><script>
+const map=L.map('map',{zoomAnimation:false,fadeAnimation:false,markerZoomAnimation:false,attributionControl:true}).setView([31.2304,121.4737],15);
+const tiles=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).addTo(map);
+tiles.on('tileerror',()=>document.getElementById('error').style.display='block');
+let circle=L.circle([31.2304,121.4737],{radius:200,color:'#506832',weight:2,fillOpacity:.12}).addTo(map);
+let center=L.circleMarker([31.2304,121.4737],{radius:5,color:'#506832',fillOpacity:1}).addTo(map);
+function selectPlace(lat,lng,radius){circle.setLatLng([lat,lng]).setRadius(radius);center.setLatLng([lat,lng]);map.setView([lat,lng],map.getZoom(),{animate:false});}
+map.on('click',e=>PlaceBridge.choose(e.latlng.lat,e.latlng.lng));
+</script></body></html>

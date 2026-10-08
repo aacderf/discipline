@@ -1,0 +1,6 @@
+<resources><style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
+    <item name="android:fontFamily">sans</item><item name="android:colorAccent">#3B7971</item>
+    <item name="android:windowLightStatusBar">true</item>
+    <item name="android:windowBackground">#F7FAF9</item><item name="android:navigationBarColor">#F7FAF9</item>
+    <item name="android:statusBarColor">#F7FAF9</item><item name="android:windowActionModeOverlay">true</item>
+</style><string name="accessibility_description">仅识别前台应用名称，并在你设定的限制生效时显示拦截页。不读取聊天、输入内容或页面文字。你可在系统设置中停用此服务。</string></resources>
