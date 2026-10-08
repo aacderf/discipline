@@ -102,7 +102,9 @@ Push 到 `main`、Pull Request 或手动运行 [Android build](https://github.co
 ./gradlew :app:connectedDebugAndroidTest
 ```
 
-部分测试需要使用情况访问、悬浮窗、定位或无障碍授权及可用地图底图；不会在默认 CI 中声称通过。原项目的实地 GPS 精度、厂商后台保活与完整手绘仍需真机验证。
+0.11.6 的 Android 8 / API 26、Android 16 / API 36 模拟器各通过四项兼容专项测试：无特殊授权切页、定位失败保留计划、无悬浮窗授权的前台计时与暂停恢复、失效授权入口回退。现有 28 项单元测试通过，lintDebug 为 0 错误；[公开构建记录](https://github.com/aacderf/discipline/actions/runs/37813574417)成功。Release 与 Debug 已通过 64 位 ELF LOAD 和 16KB ZIP 对齐静态检查，未实测 16KB 页设备。
+
+部分测试需要使用情况访问、悬浮窗、定位或无障碍授权及可用地图底图；不会在默认 CI 中声称通过。小米真机启动、实地 GPS 精度、厂商后台保活与完整手绘仍需真机验证。
 
 应用数据本地保存，无账号、无自建服务器；地图、搜索与可选融合定位使用高德网络服务。无障碍权限或服务被撤销时拦截可能失效，备用模式是尽力拦截。普通应用不能阻止系统强行停止或卸载。
 
