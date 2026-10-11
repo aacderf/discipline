@@ -81,7 +81,8 @@ public class PlaceRepairDeviceTest {
       assertNotNull(db.prepareImport(db.exportJson()));
     }
     try (ActivityScenario<ComposePlaceActivity> scenario = ActivityScenario.launch(intent)) {
-      tap("删除"); tap("删除地点"); device.waitForIdle();
+      UiObject2 delete = device.wait(Until.findObject(By.desc("删除当前地点")), 6000);
+      assertNotNull(delete); delete.click(); tap("删除地点"); device.waitForIdle();
       assertNull(db.one("places", "map-repair"));
     }
   }
@@ -95,6 +96,38 @@ public class PlaceRepairDeviceTest {
       } catch (Exception e) { throw new AssertionError(e); }
     });
     return ready.get();
+  }
+
+  @Test public void vertexDeletionClearAndUndoOnlyChangeDraftUntilSave() throws Exception {
+    db.put("places", place());
+    try (ActivityScenario<ComposePlaceActivity> scenario = ActivityScenario.launch(
+        new Intent(context, ComposePlaceActivity.class).putExtra("id", "map-repair"))) {
+      text("确认范围");
+      UiObject2 next = device.wait(Until.findObject(By.desc("下一个边界点")), 6000);
+      assertNotNull(next); next.click(); tap("删除选点"); text("选点已删除");
+      device.takeScreenshot(new File(context.getExternalCacheDir(), "map-edit-0.11.8.png"));
+      assertEquals(4, Store.polygon(db.one("places", "map-repair")).points.size());
+      tap("撤销选区修改"); text("已撤销选区修改");
+      tap("清空选区"); text("选区已清空"); tap("撤销选区修改"); text("确认范围");
+      next = device.wait(Until.findObject(By.desc("下一个边界点")), 6000); assertNotNull(next);
+      next.click(); tap("删除选点"); tap("确认范围"); tap("保存修改"); device.waitForIdle();
+      assertEquals(3, Store.polygon(db.one("places", "map-repair")).points.size());
+      assertNotNull(db.prepareImport(db.exportJson()));
+    }
+  }
+
+  @Test public void savedPlaceListHasDirectDeletionAndExplainsActiveReferences() throws Exception {
+    db.put("places", place());
+    db.put("plans", obj("id", "linked", "name", "到场计划", "place", "map-repair"));
+    try (ActivityScenario<ComposePlaceActivity> scenario = ActivityScenario.launch(new Intent(context, ComposePlaceActivity.class))) {
+      text("已存地点"); tap("已存地点");
+      UiObject2 delete = device.wait(Until.findObject(By.desc("删除地点地图校验")), 6000);
+      assertNotNull(delete); delete.click(); text("地点仍在使用"); text("到场计划"); tap("知道了");
+      assertNotNull(db.one("places", "map-repair")); db.remove("plans", "linked");
+      tap("已存地点"); delete = device.wait(Until.findObject(By.desc("删除地点地图校验")), 6000);
+      assertNotNull(delete); delete.click(); tap("删除地点"); text("还没有保存地点");
+      assertNull(db.one("places", "map-repair"));
+    }
   }
 
   @Test public void nativeMapRedrawCancelRotationAndStroke() throws Exception {

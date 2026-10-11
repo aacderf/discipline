@@ -29,6 +29,21 @@ internal object Timetable {
         it.optInt("day") == day && inWeek(it, week)
     }.sortedWith(compareBy({ it.optInt("from") }, { it.optString("title") }))
 
+    fun save(db: Store, row: JSONObject, onlyWeek: Int? = null, requireExisting: Boolean = false) = synchronized(db) {
+        val current = state(db)
+        if (requireExisting) require(rows(current).any { it.optString("id") == row.optString("id") }) {
+            "课程已被删除，请重新打开课表"
+        }
+        upsert(current, row, onlyWeek)
+        db.put("state", current)
+    }
+
+    fun remove(db: Store, id: String, onlyWeek: Int? = null) = synchronized(db) {
+        val current = state(db)
+        delete(current, id, onlyWeek)
+        db.put("state", current)
+    }
+
     fun upsert(state: JSONObject, row: JSONObject, onlyWeek: Int? = null): JSONObject {
         val list = rows(state).toMutableList()
         val index = list.indexOfFirst { it.optString("id") == row.optString("id") }
@@ -42,6 +57,8 @@ internal object Timetable {
             list.add(row)
         } else if (index >= 0) list[index] = row else list.add(row)
         require(list.size <= 500) { "课表最多保存 500 条课程，请先整理旧课程" }
+        val others = list.filter { it.optString("id") != row.optString("id") }
+        require(importable(others, listOf(row)).isNotEmpty()) { "该周次和节次已有课程，请调整时间后保存" }
         Store.set(state, "meetings", JSONArray(list))
         return state
     }

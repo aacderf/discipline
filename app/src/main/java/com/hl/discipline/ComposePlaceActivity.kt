@@ -58,6 +58,9 @@ class ComposePlaceActivity : ComponentActivity() {
     private val handles = mutableListOf<Marker>()
     private var traceLine: Polyline? = null
     private var handleDescriptor: BitmapDescriptor? = null
+    private var selectedHandleDescriptor: BitmapDescriptor? = null
+    private var selectedVertex by mutableIntStateOf(-1)
+    private var undoBoundary by mutableStateOf<TraceSnapshot?>(null)
     private var beforeDrag: List<LatLng> = emptyList()
     private var existing by mutableStateOf<JSONObject?>(null)
     private var locator: AMapLocationClient? = null
@@ -117,6 +120,7 @@ class ComposePlaceActivity : ComponentActivity() {
                     .map { pair -> LatLng(pair[0], pair[1]) }
             }
             picked = it.getBoolean("picked"); dirty = it.getBoolean("dirty")
+            selectedVertex = it.getInt("selectedVertex", -1).takeIf { index -> index in vertices.indices } ?: -1
             step = it.getInt("step", step).let { value -> if (value == 1) 0 else value }
             needsGpsConversion = it.getBoolean("needsGpsConversion", needsGpsConversion)
             name = it.getString("name", name)
@@ -154,7 +158,14 @@ class ComposePlaceActivity : ComponentActivity() {
             a.uiSettings.isZoomControlsEnabled = false
             a.uiSettings.isRotateGesturesEnabled = false
             a.uiSettings.isTiltGesturesEnabled = false
-            a.setOnMapClickListener { point -> if (!drawing && step == 0) moveTo(point.latitude, point.longitude) }
+            a.setOnMapClickListener { point ->
+                if (!drawing && step == 0) moveTo(point.latitude, point.longitude)
+                else if (!drawing) { selectedVertex = -1; renderShape() }
+            }
+            a.setOnMarkerClickListener { marker ->
+                val index = handles.indexOfFirst { it == marker }
+                if (index >= 0 && !drawing) { selectVertex(index); true } else false
+            }
             a.setOnCameraChangeListener(object : AMap.OnCameraChangeListener {
                 override fun onCameraChange(position: CameraPosition) {}
                 override fun onCameraChangeFinish(position: CameraPosition) {
@@ -164,7 +175,10 @@ class ComposePlaceActivity : ComponentActivity() {
                 }
             })
             a.setOnMarkerDragListener(object : AMap.OnMarkerDragListener {
-                override fun onMarkerDragStart(marker: Marker) { beforeDrag = vertices.toList(); dirty = true }
+                override fun onMarkerDragStart(marker: Marker) {
+                    beforeDrag = vertices.toList(); dirty = true; undoBoundary = null
+                    selectedVertex = handles.indexOfFirst { it == marker }
+                }
                 override fun onMarkerDrag(marker: Marker) { updateHandle(marker) }
                 override fun onMarkerDragEnd(marker: Marker) {
                     updateHandle(marker)
@@ -204,6 +218,7 @@ class ComposePlaceActivity : ComponentActivity() {
         outState.putBoolean("picked", snapshot?.picked ?: picked); outState.putBoolean("dirty", snapshot?.dirty ?: dirty)
         outState.putInt("step", if (drawing) if (snapshot?.picked == true) 2 else 0 else step)
         outState.putDoubleArray("vertices", (snapshot?.points ?: vertices).flatMap { listOf(it.latitude, it.longitude) }.toDoubleArray())
+        outState.putInt("selectedVertex", selectedVertex)
         outState.putBoolean("needsGpsConversion", needsGpsConversion); outState.putString("name", name)
         (snapshot?.bounds ?: rect)?.let { outState.putDouble("north", it.north); outState.putDouble("south", it.south)
             outState.putDouble("east", it.east); outState.putDouble("west", it.west) }
@@ -238,7 +253,8 @@ class ComposePlaceActivity : ComponentActivity() {
         var showPrivacy by remember { mutableStateOf(!privacyAccepted) }
         var coordinates by remember { mutableStateOf(false) }
         var savedPlacesOpen by remember { mutableStateOf(false) }
-        var deleteOpen by remember { mutableStateOf(false) }
+        var deleteTarget by remember { mutableStateOf<JSONObject?>(null) }
+        var placesRevision by remember { mutableIntStateOf(0) }
         var loadingPlace by remember { mutableStateOf<JSONObject?>(null) }
         var query by rememberSaveable { mutableStateOf("") }
         val trace = remember { mutableListOf<Offset>() }
@@ -325,8 +341,9 @@ class ComposePlaceActivity : ComponentActivity() {
                             IconButton(onClick = { coordinates = true }, modifier = Modifier.size(48.dp)) {
                                 Icon(painterResource(R.drawable.ic_target), contentDescription = "输入坐标", modifier = Modifier.size(22.dp)) }
                             TextButton(onClick = { savedPlacesOpen = true }) { Text("已存地点") }
-                            if (existing != null) TextButton(onClick = { deleteOpen = true }) {
-                                Text("删除", color = MaterialTheme.colorScheme.error)
+                            if (existing != null) IconButton(onClick = { deleteTarget = existing }, modifier = Modifier.size(48.dp)) {
+                                Icon(painterResource(R.drawable.ic_delete), contentDescription = "删除当前地点",
+                                    tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
                             }
                         }
                         if (drawing) Text("沿边界画一圈，抬手自动闭合", Modifier.padding(8.dp),
@@ -343,6 +360,24 @@ class ComposePlaceActivity : ComponentActivity() {
                     val bounds = rect
                     if (picked && bounds != null) Caption("横向 %.0f 米 · 纵向 %.0f 米".format(Locale.CHINA,
                         bounds.width(), bounds.height()))
+                    if (step == 2 && vertices.isNotEmpty()) Row(Modifier.fillMaxWidth(),
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        TextButton(onClick = { selectVertex(if (selectedVertex <= 0) vertices.lastIndex else selectedVertex - 1) },
+                            modifier = Modifier.size(48.dp).semantics { contentDescription = "上一个边界点" }) { Text("‹") }
+                        Text(if (selectedVertex in vertices.indices) "${selectedVertex + 1} / ${vertices.size}"
+                            else "点选边界点", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                        TextButton(onClick = { selectVertex((selectedVertex + 1) % vertices.size) },
+                            modifier = Modifier.size(48.dp).semantics { contentDescription = "下一个边界点" }) { Text("›") }
+                        TextButton(enabled = selectedVertex in vertices.indices && vertices.size > 3,
+                            onClick = { removeSelectedVertex() }) { Text("删除选点", color = if (selectedVertex in vertices.indices && vertices.size > 3)
+                                MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant) }
+                    }
+                    if (undoBoundary != null || step == 2) Row(Modifier.fillMaxWidth(),
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        if (undoBoundary != null) TextButton(onClick = { undoBoundaryEdit() }) { Text("撤销选区修改") }
+                        Spacer(Modifier.weight(1f))
+                        if (step == 2) TextButton(onClick = { clearSelection() }) { Text("清空选区") }
+                    }
                     when (step) {
                         0 -> Primary("手绘圈选范围", Modifier.fillMaxWidth()) { beginTrace() }
                         1 -> Secondary("取消绘制") { cancelTrace() }
@@ -373,34 +408,47 @@ class ComposePlaceActivity : ComponentActivity() {
             getSharedPreferences("PlaceActivity", 0).edit().putBoolean("locationPrivacyAccepted", true).apply()
             fusionNotice = false
             if (db.settings().optBoolean("monitor") && checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED)
-                startForegroundService(Intent(this, LocationService::class.java))
+                AndroidCompat.startService(this, Intent(this, LocationService::class.java))
             current()
         }, systemOnly = { fusionNotice = false; current() }, dismiss = { fusionNotice = false })
         if (savedPlacesOpen) AlertDialog(onDismissRequest = { savedPlacesOpen = false }, title = { Text("已存地点") }, text = {
-            val places = db.all("places").filter { !it.optBoolean("archived") }
+            val places = remember(placesRevision) { db.all("places").filter { !it.optBoolean("archived") } }
             Column(Modifier.heightIn(max = 360.dp).verticalScroll(androidx.compose.foundation.rememberScrollState())) {
                 if (places.isEmpty()) Text("还没有保存地点。移动地图，沿边界画一圈即可添加。")
-                places.forEach { place -> TextButton(onClick = {
-                    savedPlacesOpen = false
-                    if (dirty) loadingPlace = place else loadPlace(place)
-                }) { Text(place.optString("name")) } }
+                places.forEach { place -> Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    TextButton(modifier = Modifier.weight(1f), onClick = {
+                        savedPlacesOpen = false
+                        if (dirty) loadingPlace = place else loadPlace(place)
+                    }) { Text(place.optString("name")) }
+                    IconButton(onClick = { deleteTarget = place; savedPlacesOpen = false },
+                        modifier = Modifier.size(48.dp)) {
+                        Icon(painterResource(R.drawable.ic_delete), contentDescription = "删除地点${place.optString("name")}",
+                            tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
+                    }
+                } }
             }
         }, confirmButton = { TextButton(onClick = { savedPlacesOpen = false }) { Text("关闭") } })
         loadingPlace?.let { place -> ConfirmDialog("切换地点？", "当前未保存的修改将被放弃。", {
             loadingPlace = null; loadPlace(place)
         }) { loadingPlace = null } }
-        if (deleteOpen) {
-            val id = existing?.optString("id").orEmpty()
+        deleteTarget?.let { target ->
+            val id = target.optString("id")
             val linked = PlaceDeletion.blockers(db, id)
-            AlertDialog(onDismissRequest = { deleteOpen = false }, title = { Text(if (linked.isEmpty()) "删除地点？" else "地点仍在使用") },
-                text = { Text(if (linked.isEmpty()) "将移除“${existing?.optString("name")}”。历史到场记录与统计保留。"
+            AlertDialog(onDismissRequest = { deleteTarget = null }, title = { Text(if (linked.isEmpty()) "删除地点？" else "地点仍在使用") },
+                text = { Text(if (linked.isEmpty()) "将移除“${target.optString("name")}”。历史到场记录与统计保留。"
                     else "关联：${linked.joinToString("、")}。请先在管理计划中更换地点或移除关联计划，再删除。") },
                 confirmButton = { TextButton(onClick = {
-                    if (linked.isNotEmpty()) deleteOpen = false
-                    else try { PlaceDeletion.delete(db, id); saved = true; setResult(RESULT_OK); finish() }
-                    catch (e: Exception) { status = e.message ?: "删除失败"; deleteOpen = false }
+                    if (linked.isNotEmpty()) deleteTarget = null
+                    else try {
+                        PlaceDeletion.delete(db, id); placesRevision++; deleteTarget = null
+                        if (existing?.optString("id") == id) {
+                            cancelLocation(); clearOverlay(); vertices = emptyList(); rect = null; picked = false
+                            existing = null; selectedVertex = -1; undoBoundary = null; name = ""; dirty = false; step = 0
+                        }
+                        setResult(RESULT_OK); status = "已删除地点“${target.optString("name")}”"; savedPlacesOpen = true
+                    } catch (e: Exception) { status = e.message ?: "删除失败"; deleteTarget = null }
                 }) { Text(if (linked.isEmpty()) "删除地点" else "知道了") } },
-                dismissButton = { TextButton(onClick = { deleteOpen = false }) { Text("取消") } })
+                dismissButton = { TextButton(onClick = { deleteTarget = null }) { Text("取消") } })
         }
         if (resultItems.isNotEmpty()) AlertDialog(onDismissRequest = { resultItems = emptyList() },
             title = { Text("选择地点") }, text = {
@@ -433,6 +481,7 @@ class ComposePlaceActivity : ComponentActivity() {
             return
         }
         beforeTrace = TraceSnapshot(vertices.toList(), rect, picked, centerLat, centerLng, dirty)
+        selectedVertex = -1; undoBoundary = null
         drawing = true; step = 1; picked = false; rect = null; vertices = emptyList()
         map?.uiSettings?.setAllGesturesEnabled(false)
         dirty = true; clearOverlay(); status = "用手指沿边界画一圈"
@@ -453,6 +502,36 @@ class ComposePlaceActivity : ComponentActivity() {
     }
     private fun shapeArea(): Rules.PolygonArea? = vertices.takeIf { it.size >= 3 }?.let { points ->
         Rules.PolygonArea(points.map { doubleArrayOf(it.latitude, it.longitude) })
+    }
+    private fun selectVertex(index: Int) {
+        if (index !in vertices.indices) return
+        selectedVertex = index; renderShape()
+        status = if (vertices.size == 3) "已选第 ${index + 1} 个点；范围至少保留 3 个点，可拖动调整"
+            else "已选第 ${index + 1} 个点，拖动微调或删除；修改后需保存"
+    }
+    private fun boundarySnapshot() = TraceSnapshot(vertices.toList(), rect, picked, centerLat, centerLng, dirty)
+    private fun removeSelectedVertex() {
+        try {
+            val next = BoundaryEditing.remove(vertices.map { doubleArrayOf(it.latitude, it.longitude) }, selectedVertex)
+                .map { LatLng(it[0], it[1]) }
+            undoBoundary = boundarySnapshot(); vertices = next
+            rect = shapeArea()?.bounds; selectedVertex = selectedVertex.coerceAtMost(vertices.lastIndex)
+            rect?.let { centerLat = (it.north + it.south) / 2; centerLng = (it.east + it.west) / 2 }
+            dirty = true; clearOverlay(); renderShape()
+            status = "选点已删除，可撤销；保存后才更新地点"
+        } catch (e: IllegalArgumentException) { status = e.message ?: "无法删除选点" }
+    }
+    private fun clearSelection() {
+        cancelLocation(); undoBoundary = boundarySnapshot(); clearOverlay()
+        vertices = emptyList(); rect = null; picked = false; selectedVertex = -1; step = 0; dirty = true
+        status = "选区已清空，可撤销或重新圈选；已存地点暂未改变"
+    }
+    private fun undoBoundaryEdit() {
+        val snapshot = undoBoundary ?: return
+        vertices = snapshot.points; rect = snapshot.bounds; picked = snapshot.picked
+        centerLat = snapshot.latitude; centerLng = snapshot.longitude; dirty = snapshot.dirty
+        undoBoundary = null; selectedVertex = -1; step = if (picked) 2 else 0
+        clearOverlay(); renderShape(); status = "已撤销选区修改"
     }
     private fun validShape(): Boolean = if (vertices.isNotEmpty()) shapeArea()?.valid() == true else rect?.valid() == true
     private fun projectionReady(): Boolean {
@@ -515,12 +594,16 @@ class ComposePlaceActivity : ComponentActivity() {
             paint.color = 0xFF263331.toInt(); canvas.drawCircle(size / 2f, size / 2f, size * .45f, paint)
             paint.color = 0xFF76BDB4.toInt(); canvas.drawCircle(size / 2f, size / 2f, size * .33f, paint)
             handleDescriptor = BitmapDescriptorFactory.fromBitmap(bitmap)
+            val selected = bitmap.copy(Bitmap.Config.ARGB_8888, true)
+            paint.color = 0xFFF7FAF9.toInt(); Canvas(selected).drawCircle(size / 2f, size / 2f, size * .33f, paint)
+            selectedHandleDescriptor = BitmapDescriptorFactory.fromBitmap(selected)
         }
         if (handles.size != points.size) { handles.forEach { it.remove() }; handles.clear() }
         points.forEachIndexed { index, point ->
             if (index >= handles.size) handles.add(a.addMarker(MarkerOptions().position(point)
                 .icon(handleDescriptor).draggable(true).anchor(.5f, .5f)))
             else handles[index].position = point
+            handles[index].setIcon(if (index == selectedVertex) selectedHandleDescriptor else handleDescriptor)
         }
     }
     private fun updateHandle(marker: Marker) {
@@ -534,6 +617,7 @@ class ComposePlaceActivity : ComponentActivity() {
     private fun loadPlace(place: JSONObject) {
         cancelLocation(); clearOverlay(); beforeTrace = null; drawing = false; restoreGestures()
         existing = place; name = place.optString("name"); dirty = false; picked = true; step = 2
+        selectedVertex = -1; undoBoundary = null
         centerLat = place.optDouble("lat"); centerLng = place.optDouble("lng")
         rect = Rules.Rect(place.optDouble("north"), place.optDouble("south"), place.optDouble("east"), place.optDouble("west"))
         vertices = if (place.optString("shape") == "polygon") Store.polygon(place)?.points

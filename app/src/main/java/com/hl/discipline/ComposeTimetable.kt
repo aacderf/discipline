@@ -288,7 +288,9 @@ private fun CourseEditor(activity: ComposeMainActivity, state: JSONObject, origi
     fun save(onlyWeek: Boolean) {
         val d = day.toIntOrNull() ?: 0; val first = from.toIntOrNull() ?: 0
         val last = until.toIntOrNull() ?: 0
-        val numbers = weeks.split(';').mapNotNull { it.trim().toIntOrNull() }.distinct()
+        val numbers = try { TimetableCsv.weeks(weeks) } catch (_: IllegalArgumentException) {
+            error = "周次可用 1;3;5、1-18、1-18/odd 或 1-18/even"; return
+        }
         if (title.isBlank() || d !in 1..7 || first !in 1..12 || last !in first..12 ||
             numbers.isEmpty() || numbers.any { it !in 1..18 }) {
             error = "请填写名称、星期、1–12 节及 1–18 周"; return
@@ -296,9 +298,14 @@ private fun CourseEditor(activity: ComposeMainActivity, state: JSONObject, origi
         val row = Store.obj("id", id, "title", title.trim(), "room", room.trim(),
             "day", d, "from", first, "until", last, "weeks", JSONArray(numbers),
             "source", "manual", "review", false)
+        if (first == original.optInt("from") && last == original.optInt("until")) {
+            listOf("startTime", "endTime").forEach { key ->
+                if (original.has(key)) Store.set(row, key, original.optString(key))
+            }
+        }
+        Store.set(row, "review", Timetable.times(row).let { it.first.isBlank() || it.second.isBlank() })
         if (activity.act {
-            Timetable.upsert(state, row, if (existing && onlyWeek) week else null)
-            activity.db.put("state", state)
+            Timetable.save(activity.db, row, if (existing && onlyWeek) week else null, requireExisting = existing)
             Scheduler.schedule(activity)
         }) onDismiss()
     }
@@ -320,13 +327,13 @@ private fun CourseEditor(activity: ComposeMainActivity, state: JSONObject, origi
                     Input("起始节", from, { from = it }, Modifier.weight(1f), keyboard = KeyboardType.Number)
                     Input("结束节", until, { until = it }, Modifier.weight(1f), keyboard = KeyboardType.Number)
                 }
-                Input("周次（用 ; 分隔）", weeks, { weeks = it })
+                Input("周次：1-18 或 1;3;5", weeks, { weeks = it; error = "" })
+                Caption("单双周可写 1-18/odd 或 1-18/even；保存这周只影响第 $week 周。")
                 if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
                 if (existing) TextButton(onClick = {
                     if (activity.act {
-                        Timetable.delete(state, id, week)
-                        activity.db.put("state", state)
+                        Timetable.remove(activity.db, id, week)
                         Scheduler.schedule(activity)
                     }) onDismiss()
                 }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),

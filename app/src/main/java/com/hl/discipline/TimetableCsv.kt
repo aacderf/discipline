@@ -40,7 +40,7 @@ internal object TimetableCsv {
         }
     }
 
-    private fun weeks(value: String, line: Int): List<Int> {
+    fun weeks(value: String, line: Int = 1): List<Int> {
         val range = Regex("(\\d+)-(\\d+)(?:/(odd|even))?")
         val numbers = value.lowercase(java.util.Locale.ROOT).split(';').flatMap { part ->
             val match = range.matchEntire(part.trim())

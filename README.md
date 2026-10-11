@@ -2,7 +2,7 @@
 
 [![Android build](https://github.com/aacderf/discipline/actions/workflows/android.yml/badge.svg)](https://github.com/aacderf/discipline/actions/workflows/android.yml)
 
-Android 本地自律工具，基于 Kotlin / Java 与 Jetpack Compose。本仓库公开 0.11.7 的完整 App 源码、测试、资源与构建流程。
+Android 本地自律工具，基于 Kotlin / Java 与 Jetpack Compose。本仓库公开 0.11.8 的完整 App 源码、测试、资源与构建流程。
 
 ## 功能
 
@@ -16,6 +16,8 @@ Android 本地自律工具，基于 Kotlin / Java 与 Jetpack Compose。本仓�
 公开版使用合成课表示例，不包含个人课表、定位记录、备份、截图、地图 Key 或原始签名。示例学期固定为 2026-08-31 起 18 周；当前课表结构仍按这个学期校验，这是已知限制。
 
 ## 0.11.7 更新
+
+0.11.8 补充：地图支持选中边界点删除、清空与撤销，保存后才更新地点；已存地点列表提供直接删除入口，并保护关联计划及历史记录。计划／课程“提前 0 分钟”在到点或短暂调度延迟时也可提醒，已发送事件不重复；课程编辑支持连续周次、单双周并检查时间冲突，保存使用最新课表状态以保留提醒历史。数据库及备份仍为版本 4。
 
 - 专注开始、恢复与补记检查在同一锁或事务中完成，防止并发操作覆盖已结束或已结算状态。
 - 文件导入、导出与恢复改在 IO 线程执行，显示进度并拒绝重复数据操作，导航仍可响应。
