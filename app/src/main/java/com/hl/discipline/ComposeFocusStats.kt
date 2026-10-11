@@ -59,6 +59,9 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
 import org.json.JSONObject
 import kotlin.math.cos
 import kotlin.math.sin
@@ -321,32 +324,45 @@ internal fun FocusScreen(activity: ComposeMainActivity, nav: NavHostController, 
     }) { confirmEnd = false }
 }
 
-internal data class ChartRow(val label: String, val focus: Long)
-
 @Composable
 internal fun StatsScreen(activity: ComposeMainActivity, nav: NavHostController) {
     val revision = activity.revision
-    var range by rememberSaveable { mutableIntStateOf(7) }
+    var selectedRange by rememberSaveable { mutableIntStateOf(7) }
     val motion = richMotionEnabled()
-    val now = remember(revision, range) { System.currentTimeMillis() }
-    val day = Rules.date(now)
-    val first = when (range) { 1 -> day; 7 -> Rules.monday(day); else -> day.withDayOfMonth(1) }
-    val start = Rules.at(first, 0)
-    val window = listOf(longArrayOf(start, now))
-    val focusRanges = remember(revision) { activity.engine.ranges("focus", null, null) }
-    val presenceRanges = remember(revision) { activity.engine.ranges("presence", null, null) }
-    val focus = Rules.union(Rules.intersect(focusRanges, window))
-    val presence = Rules.union(Rules.intersect(presenceRanges, window))
-    val ended = remember(revision, range) { activity.db.all("instances").filter {
-        it.optLong("due") in start..now && !activity.engine.hasChildren(it) && it.optString("status") != "leave"
-    } }
-    val done = ended.count { activity.done(it) }
-    val failed = ended.count { it.optString("status") == "failed" }
-    val review = ended.count { it.optString("status") == "review" }
-    DraggableSegment(listOf("今天", "本周", "本月"), when (range) { 1 -> 0; 7 -> 1; else -> 2 }, activity.motionEnabled) {
-        range = listOf(1, 7, 30)[it]
+    var report by remember { mutableStateOf<StatisticsReport?>(null) }
+    var loading by remember { mutableStateOf(true) }
+    var error by remember { mutableStateOf("") }
+    var retry by remember { mutableIntStateOf(0) }
+    LaunchedEffect(revision, selectedRange, retry) {
+        loading = true; error = ""
+        try {
+            report = withContext(Dispatchers.IO) { StatisticsRepository.load(activity.db, selectedRange, System.currentTimeMillis()) }
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { error = "统计暂时无法更新，原始记录仍保留。" }
+        finally { loading = false }
     }
-    val empty = focus == 0L && presence == 0L && ended.isEmpty()
+    DraggableSegment(listOf("今天", "本周", "本月"), when (selectedRange) { 1 -> 0; 7 -> 1; else -> 2 }, activity.motionEnabled) {
+        selectedRange = listOf(1, 7, 30)[it]
+    }
+    if (error.isNotEmpty()) {
+        Caption(error)
+        Secondary("重新整理统计") { retry++ }
+    }
+    val data = report
+    if (data == null) {
+        Panel { Text("本期概览", style = MaterialTheme.typography.titleMedium)
+            Caption(if (loading) "正在整理本地计时与任务记录…" else "可稍后重试，计划和计时不受影响。") }
+        return
+    }
+    val range = data.range
+    val start = data.start
+    val focus = data.focus
+    val presence = data.presence
+    val done = data.done
+    val failed = data.failed
+    val review = data.review
+    if (loading) Caption("正在更新统计，以下保留上次结果。")
+    val empty = data.empty
     var emptyVisible by rememberSaveable { mutableStateOf(!motion) }
     LaunchedEffect(empty, motion) { emptyVisible = empty }
     if (empty) {
@@ -367,9 +383,6 @@ internal fun StatsScreen(activity: ComposeMainActivity, nav: NavHostController) 
     Caption("统计范围 · ${timeText(start)} 至现在")
     Panel {
         Text("本期概览", style = MaterialTheme.typography.titleMedium)
-        val focusRecords = remember(revision, range) { activity.db.all("sessions").count {
-            it.optString("kind") == "focus" && it.optLong("end") > start && it.optLong("start") < now
-        } }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
             Caption("专注时长")
@@ -378,24 +391,26 @@ internal fun StatsScreen(activity: ComposeMainActivity, nav: NavHostController) 
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
             Column(Modifier.weight(1f)) {
-                Caption("专注记录")
-                Text("$focusRecords", style = AppTypography.number, fontSize = 21.sp, fontWeight = FontWeight.Bold)
+                Caption("有效专注段")
+                Text("${data.focusSegments}", style = AppTypography.number, fontSize = 21.sp, fontWeight = FontWeight.Bold)
             }
             Column(Modifier.weight(1f)) {
-                Caption("任务完成率")
-                Text(if (ended.isEmpty()) "—" else "${done * 100 / ended.size}%",
+                Caption("到期任务完成率")
+                Text(if (data.verified == 0) "—" else "${done * 100 / data.verified}%",
                     style = AppTypography.number, fontSize = 21.sp, fontWeight = FontWeight.Bold)
             }
         }
-        Caption("到场时长 ${duration(presence)} · 专注记录按有效计时片段统计")
+        Caption(if (data.focusSegments > 0) "每段平均 ${duration(focus / data.focusSegments)} · 到场 ${duration(presence)}"
+            else "到场时长 ${duration(presence)}")
+        Caption("相连计时片段合并为一段；暂停或休息后的不连续计时另计。")
     }
-    val rows = remember(revision, range) { chartRows(range, first, now, focusRanges) }
+    val rows = data.rows
     Section("专注时长")
     Panel {
         Caption(if (range == 1) "今天 · 每 4 小时" else if (range == 7) "本周 · 每天" else "本月 · 每天")
         Caption("单位：分钟 · 薄荷柱表示有效专注时长")
         if (rows.any { it.focus > 0 }) {
-            var selected by remember(range) { mutableIntStateOf(rows.indices.maxByOrNull { rows[it].focus } ?: 0) }
+            var selected by remember(range, data.start) { mutableIntStateOf(rows.indices.maxByOrNull { rows[it].focus } ?: 0) }
             FocusDurationChart(rows, selected, range, motion) { selected = it }
             Caption("${rows[selected].label} · 专注 ${duration(rows[selected].focus)}")
             val peak = rows.maxByOrNull { it.focus }
@@ -407,63 +422,54 @@ internal fun StatsScreen(activity: ComposeMainActivity, nav: NavHostController) 
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
             Column(Modifier.weight(1f)) {
-                Text("到期任务  ${if (ended.isEmpty()) "暂无" else "$done / ${ended.size}"}", fontSize = 19.sp)
+                Text("已核验任务  ${if (data.verified == 0) "暂无" else "$done / ${data.verified}"}", fontSize = 19.sp)
                 Caption("$failed 项未完成 · $review 项待核验")
             }
-            if (ended.isNotEmpty()) {
-                val completed = animatedStatProgress(done.toFloat() / ended.size,
+            if (data.verified > 0) {
+                val completed = animatedStatProgress(done.toFloat() / data.verified,
                     "$range-task-completion", motion)
                 CircularProgressIndicator(progress = { completed }, modifier = Modifier.size(56.dp)
-                    .clearAndSetSemantics { contentDescription = "到期任务完成 $done 项，共 ${ended.size} 项" },
+                    .clearAndSetSemantics { contentDescription = "已核验到期任务完成 $done 项，共 ${data.verified} 项" },
                     strokeWidth = 5.dp, color = AppColors.current.chartFocus,
                     trackColor = MaterialTheme.colorScheme.surfaceVariant)
             }
         }
+        Caption("按本期到期任务统计；待核验与请假不计入完成率。")
     }
     Section("各计划专注时长")
-    val plans = remember(revision) { activity.db.all("plans") }
-    val reportInstances = remember(revision) { activity.db.all("instances") }
-    val goalDurations = remember(revision, range) { plans.map { plan ->
-        val ranges = reportInstances.filter { it.optString("planId") == plan.optString("id") }
-            .flatMap { activity.engine.ranges("focus", null, it.optString("id")) }
-        val ms = Rules.union(Rules.intersect(ranges, window))
-        plan.optString("name") to ms
-    }.filter { it.second > 0 }.sortedByDescending { it.second } }
+    val goalDurations = data.goals
     Panel {
         Caption("本期专注时长 · 单位：分钟")
         if (goalDurations.isEmpty()) Caption("暂无关联计划的专注记录。开始专注时选择任务即可累计。")
-        goalDurations.forEach { (name, ms) ->
+        goalDurations.forEach { (id, name, ms) ->
             Text("$name · ${duration(ms)}")
             val progress = animatedStatProgress(ms.toFloat() /
-                goalDurations.first().second.coerceAtLeast(1), "$range-goal-$name", motion)
+                goalDurations.first().millis.coerceAtLeast(1), "$range-goal-$id", motion)
             LinearProgressIndicator(progress = { progress },
                 Modifier.fillMaxWidth(), color = AppColors.current.chartFocus,
                 trackColor = MaterialTheme.colorScheme.surfaceVariant)
         }
-        if (goalDurations.isNotEmpty()) Caption("投入最多的目标：${goalDurations.first().first}。")
+        if (goalDurations.isNotEmpty()) Caption("投入最多的计划：${goalDurations.first().title}。")
     }
     Section("各地点到场时长")
-    val placeDurations = remember(revision, range) { activity.db.all("places").map { place ->
-        val ms = Rules.union(Rules.intersect(activity.engine.ranges("presence", place.optString("id"), null), window))
-        place.optString("name") to ms
-    }.filter { it.second > 0 }.sortedByDescending { it.second } }
+    val placeDurations = data.places
     Panel {
         Caption("本期到场时长 · 单位：分钟")
         if (placeDurations.isEmpty()) Caption("暂无到场记录。添加地点并开启监测后即可累计。")
-        placeDurations.forEach { (name, ms) ->
+        placeDurations.forEach { (id, name, ms) ->
             Text("$name · ${duration(ms)}")
             val progress = animatedStatProgress(ms.toFloat() /
-                placeDurations.first().second.coerceAtLeast(1), "$range-place-$name", motion)
+                placeDurations.first().millis.coerceAtLeast(1), "$range-place-$id", motion)
             LinearProgressIndicator(progress = { progress },
                 Modifier.fillMaxWidth(), color = AppColors.current.chartPresence,
                 trackColor = MaterialTheme.colorScheme.surfaceVariant)
         }
-        if (placeDurations.isNotEmpty()) Caption("停留最久的地点：${placeDurations.first().first}。")
+        if (placeDurations.isNotEmpty()) Caption("停留最久的地点：${placeDurations.first().title}。")
     }
     Section("复盘")
     Caption(when { failed > 0 -> "有 $failed 项任务未完成。回看目标是否过大、时间是否合适。"
         review > 0 -> "先处理定位异常，核验后再判断本期完成情况。"
-        ended.isEmpty() -> "完成第一个周期后，这里会提供复盘提示。"
+        data.ended == 0 -> "完成第一个周期后，这里会提供复盘提示。"
         else -> "本期已完成 $done 项任务。" })
     Secondary("查看操作与异常记录") { nav.navigate("events") }
     Secondary("导出统计 CSV") { activity.exportCsv() }
@@ -597,19 +603,4 @@ private fun animatedStatProgress(actual: Float, key: String, motion: Boolean): F
     val shown by animateFloatAsState(target,
         tween(if (motion) AppMotion.statsBar else 0, easing = AppMotion.easing), label = "统计进度")
     return shown
-}
-
-private fun chartRows(range: Int, first: LocalDate, now: Long,
-                      focus: List<LongArray>): List<ChartRow> {
-    val count = when (range) { 1 -> 6; 7 -> 7; else -> first.lengthOfMonth() }
-    return (0 until count).map { i ->
-        val date = first.plusDays(i.toLong())
-        val from = if (range == 1) Rules.at(first, i * 240) else Rules.at(date, 0)
-        val to = minOf(now, if (range == 1) Rules.at(first, (i + 1) * 240)
-            else Rules.at(date.plusDays(1), 0))
-        val label = if (range == 1) "%02d–%02d时".format(i * 4, (i + 1) * 4)
-            else "${date.monthValue}/${date.dayOfMonth}"
-        val window = if (to > from) listOf(longArrayOf(from, to)) else emptyList()
-        ChartRow(label, Rules.union(Rules.intersect(focus, window)))
-    }
 }

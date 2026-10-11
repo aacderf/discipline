@@ -41,6 +41,7 @@ internal object Timetable {
             Store.set(row, "weeks", JSONArray(listOf(onlyWeek)))
             list.add(row)
         } else if (index >= 0) list[index] = row else list.add(row)
+        require(list.size <= 500) { "课表最多保存 500 条课程，请先整理旧课程" }
         Store.set(state, "meetings", JSONArray(list))
         return state
     }
@@ -76,54 +77,20 @@ internal object Timetable {
         return Store.obj("id", "timetable", "termStart", termStart.format(DateTimeFormatter.ISO_DATE),
             "weekCount", 18, "confirmed", false, "meetings", JSONArray(examples))
     }
-    /** CSV: title,room,day,from,until,weeks. Weeks accept 1;3;5 or 1-18/odd. */
+    private fun slot(row: JSONObject) = CourseSlot(row.optInt("day"), row.optInt("from"), row.optInt("until"),
+        (1..18).filter { inWeek(row, it) })
+
+    fun importable(existing: List<JSONObject>, incoming: List<JSONObject>): List<JSONObject> =
+        TimetableCsv.acceptedIndices(existing.map(::slot), incoming.map(::slot)).map { incoming[it] }
+
+    /** CSV syntax and conflict rules live outside the saved timetable model. */
     fun parseCsv(text: String): List<JSONObject> {
-        val lines = text.removePrefix("\uFEFF").lineSequence().filter { it.isNotBlank() }.toList()
-        require(lines.isNotEmpty()) { "CSV 为空" }
-        val header = csvLine(lines.first()).map { it.trim().lowercase() }
-        fun column(name: String) = header.indexOf(name).also { require(it >= 0) { "CSV 缺少 $name 列" } }
-        val title = column("title"); val room = column("room"); val day = column("day")
-        val from = column("from"); val until = column("until"); val weeks = column("weeks")
-        return lines.drop(1).mapIndexed { index, line ->
-            val values = csvLine(line)
-            fun value(at: Int) = values.getOrNull(at)?.trim().orEmpty()
-            val d = value(day).toIntOrNull() ?: 0
-            val first = value(from).toIntOrNull() ?: 0
-            val last = value(until).toIntOrNull() ?: 0
-            require(value(title).isNotBlank() && d in 1..7 && first in 1..12 && last in first..12) {
-                "第 ${index + 2} 行的课程或节次无效"
-            }
-            val spec = value(weeks)
-            val numbers = when {
-                spec.matches(Regex("\\d+-\\d+/(odd|even)")) -> {
-                    val (bounds, parity) = spec.split("/")
-                    val (a, b) = bounds.split("-").map(String::toInt)
-                    require(a in 1..18 && b in a..18) { "第 ${index + 2} 行周次无效" }
-                    (a..b).filter { it % 2 == if (parity == "odd") 1 else 0 }
-                }
-                else -> spec.split(';').map { it.toIntOrNull() ?: 0 }
-            }
-            require(numbers.isNotEmpty() && numbers.all { it in 1..18 }) { "第 ${index + 2} 行周次无效" }
-            Store.obj("id", Store.id(), "title", value(title), "room", value(room),
-                "day", d, "from", first, "until", last, "weeks", JSONArray(numbers.distinct()),
-                "review", times(Store.obj("from", first, "until", last)).let { it.first.isEmpty() || it.second.isEmpty() },
+        return TimetableCsv.parse(text).map { course ->
+            Store.obj("id", Store.id(), "title", course.title, "room", course.room,
+                "day", course.slot.day, "from", course.slot.from, "until", course.slot.until,
+                "weeks", JSONArray(course.slot.weeks),
+                "review", times(Store.obj("from", course.slot.from, "until", course.slot.until)).let { it.first.isEmpty() || it.second.isEmpty() },
                 "source", "csv")
         }
-    }
-
-    private fun csvLine(line: String): List<String> {
-        val out = mutableListOf<String>(); val cell = StringBuilder(); var quoted = false; var i = 0
-        while (i < line.length) {
-            val ch = line[i]
-            if (ch == '"') {
-                if (quoted && i + 1 < line.length && line[i + 1] == '"') { cell.append('"'); i++ }
-                else quoted = !quoted
-            } else if (ch == ',' && !quoted) { out += cell.toString(); cell.clear() }
-            else cell.append(ch)
-            i++
-        }
-        require(!quoted) { "CSV 引号未闭合" }
-        out += cell.toString()
-        return out
     }
 }

@@ -84,20 +84,9 @@ internal fun TimetableScreen(activity: ComposeMainActivity, onScrolled: (Boolean
     var pendingEditor by remember { mutableStateOf<JSONObject?>(null) }
     var pendingHelp by remember { mutableStateOf(false) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) activity.act {
-            val bytes = activity.contentResolver.openInputStream(uri)!!.use { input ->
-                val output = java.io.ByteArrayOutputStream()
-                val buffer = ByteArray(4096)
-                while (true) {
-                    val count = input.read(buffer)
-                    if (count < 0) break
-                    require(output.size() + count <= 1_000_000) { "课表 CSV 超过 1MB" }
-                    output.write(buffer, 0, count)
-                }
-                output.toByteArray()
-            }
-            csvPreview = Timetable.parseCsv(bytes.toString(Charsets.UTF_8))
-        }
+        if (uri != null) activity.runDataOperation("正在读取课表", {
+            Timetable.parseCsv(DocumentTransfers.read(activity, uri, 1_000_000, "课表 CSV 超过 1MB"))
+        }) { csvPreview = it }
     }
     Column(Modifier.fillMaxWidth().verticalScroll(if (grid) gridScroll else agendaScroll),
         verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
@@ -210,7 +199,7 @@ internal fun TimetableScreen(activity: ComposeMainActivity, onScrolled: (Boolean
         }
     }
     if (importHelp) AlertDialog(onDismissRequest = { importHelp = false }, title = { Text("课表导入说明") },
-        text = { Text("本学期第 1 周从 2026 年 8 月 31 日开始，共 18 周。\n\nUTF-8 CSV 列：title,room,day,from,until,weeks。周次可用 1;3;5 或 1-18/odd。导入前会显示冲突预览。") },
+        text = { Text("本学期第 1 周从 2026 年 8 月 31 日开始，共 18 周。\n\nUTF-8 CSV 列：title,room,day,from,until,weeks。day 为周一至周日的 1–7，from/until 为起止节次。周次可用 1;3;5、1-18、1-18/odd 或 1-18/even。相同日期、节次和周次的冲突课程会跳过，同批导入保留先出现的课程。") },
         confirmButton = { TextButton(onClick = { importHelp = false }) { Text("知道了") } })
     AppValueSheet(editing, onDismiss = { editing = null }) { original ->
         key(original.optString("id")) {
@@ -219,18 +208,15 @@ internal fun TimetableScreen(activity: ComposeMainActivity, onScrolled: (Boolean
     }
     csvPreview?.let { pending ->
         val existing = Timetable.rows(state)
-        val accepted = pending.filter { imported -> !existing.any { old ->
-            old.optInt("day") == imported.optInt("day") &&
-                (old.optInt("from")..old.optInt("until")).any {
-                    it in imported.optInt("from")..imported.optInt("until")
-                } && (1..18).any { Timetable.inWeek(old, it) && Timetable.inWeek(imported, it) }
-        } }
+        val accepted = Timetable.importable(existing, pending)
+        val fits = existing.size + accepted.size <= 500
         val conflicts = pending.filterNot { it in accepted }
         AlertDialog(onDismissRequest = { csvPreview = null }, title = { Text("导入课表预览") },
             text = {
                 Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("共 ${pending.size} 条；可导入 ${accepted.size} 条，冲突 ${conflicts.size} 条。")
+                    if (!fits) Text("课表最多保存 500 条课程，请先整理旧课程。", color = MaterialTheme.colorScheme.error)
                     accepted.take(8).forEach { row ->
                         Caption("导入 · 周${"一二三四五六日"[row.optInt("day") - 1]} " +
                             "${row.optInt("from")}–${row.optInt("until")}节 · ${row.optString("title")}")
@@ -244,10 +230,14 @@ internal fun TimetableScreen(activity: ComposeMainActivity, onScrolled: (Boolean
                     if (pending.size > 8) Caption("其余条目会按同样的时间冲突规则处理。")
                 }
             },
-            confirmButton = { TextButton(onClick = {
+            confirmButton = { TextButton(enabled = fits && accepted.isNotEmpty(), onClick = {
                 if (activity.act {
-                    Store.set(state, "meetings", JSONArray(existing + accepted))
-                    activity.db.put("state", state)
+                    val current = Timetable.state(activity.db)
+                    val saved = Timetable.rows(current)
+                    val valid = Timetable.importable(saved, pending)
+                    require(saved.size + valid.size <= 500) { "课表最多保存 500 条课程" }
+                    Store.set(current, "meetings", JSONArray(saved + valid))
+                    activity.db.put("state", current)
                     Scheduler.schedule(activity)
                 }) csvPreview = null
             }) { Text("导入无冲突课程") } },

@@ -106,12 +106,17 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.lifecycleScope
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import org.json.JSONArray
 import org.json.JSONObject
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 internal fun DisciplineTheme(darkTheme: Boolean? = null, themeMode: AppThemeMode? = null,
@@ -167,6 +172,7 @@ class ComposeMainActivity : ComponentActivity() {
     internal var revision by mutableIntStateOf(0)
     internal var themeMode by mutableStateOf(AppThemeMode.SYSTEM)
     internal var preparedRestore by mutableStateOf<JSONObject?>(null)
+    internal var dataOperation by mutableStateOf("")
     internal var focusTaskId by mutableStateOf("")
     internal var focusMinutes by mutableStateOf("25")
     internal var focusPreset by mutableStateOf("custom")
@@ -182,33 +188,26 @@ class ComposeMainActivity : ComponentActivity() {
         refresh()
     }
     private val exportBackup = registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
-        if (uri != null) act { contentResolver.openOutputStream(uri, "wt")!!.use { it.write(db.exportJson().toByteArray(Charsets.UTF_8)) }; toast("已导出") }
+        if (uri != null) runDataOperation("正在导出备份", {
+            DocumentTransfers.write(this, uri, db.exportJson())
+        }) { toast("备份已导出") }
     }
     private val exportSnapshot = registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
-        if (uri != null) act {
+        if (uri != null) runDataOperation("正在导出恢复前数据", {
             val snapshot = db.latestRestoreSnapshot() ?: throw IllegalStateException("找不到恢复前数据")
-            contentResolver.openOutputStream(uri, "wt")!!.use { output -> snapshot.inputStream().use { it.copyTo(output) } }
-            toast("已导出")
-        }
+            val output = contentResolver.openOutputStream(uri, "wt") ?: error("无法写入保存位置")
+            output.use { snapshot.inputStream().use { input -> input.copyTo(it) } }
+        }) { toast("恢复前数据已导出") }
     }
     private val exportStatistics = registerForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
-        if (uri != null) act { contentResolver.openOutputStream(uri, "wt")!!.use { it.write(csv().toByteArray(Charsets.UTF_8)) }; toast("已导出") }
+        if (uri != null) runDataOperation("正在导出统计", {
+            DocumentTransfers.write(this, uri, csv())
+        }) { toast("统计已导出") }
     }
     private val importBackup = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) act {
-            val bytes = contentResolver.openInputStream(uri)!!.use { input ->
-                val output = java.io.ByteArrayOutputStream()
-                val chunk = ByteArray(8192)
-                while (true) {
-                    val count = input.read(chunk)
-                    if (count < 0) break
-                    require(output.size() + count <= 20_000_000) { "备份超过 20MB" }
-                    output.write(chunk, 0, count)
-                }
-                output.toByteArray()
-            }
-            preparedRestore = db.prepareImport(bytes.toString(Charsets.UTF_8))
-        }
+        if (uri != null) runDataOperation("正在校验备份", {
+            db.prepareImport(DocumentTransfers.read(this, uri, 20_000_000, "备份超过 20MB"))
+        }) { preparedRestore = it }
     }
     private val handler = Handler(Looper.getMainLooper())
     private val ticker = java.util.concurrent.Executors.newSingleThreadExecutor()
@@ -348,8 +347,52 @@ class ComposeMainActivity : ComponentActivity() {
     }
     internal fun toast(message: String) { messages.trySend(message) }
     internal fun act(block: () -> Unit): Boolean {
+        if (dataOperation.isNotEmpty()) { toast("$dataOperation，请稍后再操作"); return false }
         return try { block(); refresh(); FocusCompanionService.sync(this); FallbackBlockService.sync(this); true }
         catch (e: Exception) { toast(e.message ?: "操作失败"); false }
+    }
+
+    /** Only result publication touches Compose state; document work never runs on Main. */
+    internal fun <T> runDataOperation(label: String, work: () -> T,
+        onFinished: () -> Unit = {}, onSuccess: (T) -> Unit): Boolean {
+        if (dataOperation.isNotEmpty()) { toast("$dataOperation，请稍后再操作"); return false }
+        dataOperation = label
+        lifecycleScope.launch {
+            try {
+                val result = withContext(Dispatchers.IO) { work() }
+                onSuccess(result)
+                refresh()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                toast(error.message ?: "文件操作未完成，请重试")
+            } finally {
+                dataOperation = ""
+                if (!isFinishing && !isDestroyed) onFinished()
+            }
+        }
+        return true
+    }
+
+    internal fun restorePreparedBackup(prepared: JSONObject) {
+        if (dataOperation.isNotEmpty()) { toast("$dataOperation，请稍后再操作"); return }
+        stopService(Intent(this, LocationService::class.java))
+        stopService(Intent(this, FocusCompanionService::class.java))
+        stopService(Intent(this, FallbackBlockService::class.java))
+        runDataOperation("正在恢复备份", {
+            db.importPrepared(prepared)
+            engine.tick()
+        }, onFinished = {
+            FocusCompanionService.sync(this)
+            FallbackBlockService.sync(this)
+            if (db.settings().optBoolean("monitor") &&
+                checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED)
+                AndroidCompat.startService(this, Intent(this, LocationService::class.java))
+            refresh()
+        }) {
+            preparedRestore = null
+            toast("已恢复备份，地点监测需重新开启")
+        }
     }
 
     internal fun startFocusFor(id: String, nav: NavHostController) {
@@ -464,6 +507,15 @@ private fun DisciplineApp(activity: ComposeMainActivity) {
         composable("about") { AboutScreen(activity, nav) }
     }
     SnackbarHost(snackbar, Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 68.dp))
+    if (activity.dataOperation.isNotEmpty()) Surface(
+        Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(horizontal = 20.dp, vertical = 68.dp)
+            .testTag("data-operation"), shape = AppShapes.card, color = MaterialTheme.colorScheme.surface) {
+        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+            Text(activity.dataOperation, style = MaterialTheme.typography.bodyMedium)
+        }
+    }
     FocusPhaseDialog(activity)
     }
     }

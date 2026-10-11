@@ -371,12 +371,19 @@ internal fun SettingsScreen(activity: ComposeMainActivity, nav: NavHostControlle
         accessGuide = false; AndroidCompat.openSettings(activity, Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
     }) { accessGuide = false }
     val prepared = activity.preparedRestore
-    if (prepared != null) ConfirmDialog("恢复完整备份？", "将替换全部计划、记录和设置。备份含 ${prepared.optJSONArray("plans")?.length() ?: 0} 个计划、${prepared.optJSONArray("sessions")?.length() ?: 0} 段计时。恢复前会保存当前数据。", {
-        if (activity.act { activity.db.importPrepared(prepared); activity.stopService(Intent(activity, LocationService::class.java)); activity.engine.tick() }) {
-            FallbackBlockService.sync(activity)
-            activity.preparedRestore = null
-        }
-    }) { activity.preparedRestore = null }
+    if (prepared != null) {
+        val busy = activity.dataOperation.isNotEmpty()
+        AlertDialog(onDismissRequest = { if (!busy) activity.preparedRestore = null },
+            title = { Text("恢复完整备份？") },
+            text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("将替换全部计划、记录和设置。备份含 ${prepared.optJSONArray("plans")?.length() ?: 0} 个计划、${prepared.optJSONArray("sessions")?.length() ?: 0} 段计时。恢复前会保存当前数据。")
+                if (busy) Text(activity.dataOperation, color = MaterialTheme.colorScheme.primary)
+            } },
+            confirmButton = { TextButton(enabled = !busy,
+                onClick = { activity.restorePreparedBackup(prepared) }) { Text("恢复备份") } },
+            dismissButton = { TextButton(enabled = !busy,
+                onClick = { activity.preparedRestore = null }) { Text("取消") } })
+    }
 }
 
 @Composable

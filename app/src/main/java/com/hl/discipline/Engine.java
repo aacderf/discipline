@@ -333,13 +333,15 @@ public final class Engine {
 
   public void manual(JSONObject supplied, double amount, String reason, boolean leave) {
     if (reason.trim().isEmpty()) throw new IllegalArgumentException("请填写原因");
+    if (!Double.isFinite(amount) || amount < 0) throw new IllegalArgumentException("进度必须是非负数");
     tick();
-    JSONObject i = db.one("instances", supplied.optString("id"));
-    if (i == null
-        || !i.optString("status").equals("open") && !i.optString("status").equals("review"))
-      throw new IllegalStateException("本周期已结算，无法补改；后续计划可重新安排");
     db.atomic(
         () -> {
+          // Read and validate under the same transaction as the write; a tick may settle it.
+          JSONObject i = db.one("instances", supplied.optString("id"));
+          if (i == null
+              || !i.optString("status").equals("open") && !i.optString("status").equals("review"))
+            throw new IllegalStateException("本周期已结算，无法补改；后续计划可重新安排");
           set(i, "note", reason);
           set(i, "manual", amount);
           set(
@@ -371,6 +373,10 @@ public final class Engine {
 
   public void startFocus(String task, String place, int minutes, boolean forward, JSONArray apps,
       int shortBreak, int longBreak, int cycles) {
+    if (minutes < 1 || minutes > 720 || shortBreak < 1 || shortBreak > 120
+        || longBreak < 1 || longBreak > 180 || cycles < 1 || cycles > 12)
+      throw new IllegalArgumentException("专注或休息配置超出范围");
+    synchronized (db) {
     if (db.one("state", "focus") != null) throw new IllegalStateException("请先结束当前专注");
     long now = System.currentTimeMillis();
     if (!place.isEmpty() && !inside(place, now))
@@ -412,6 +418,7 @@ public final class Engine {
             1,
             "apps",
             apps));
+    }
     Scheduler.schedule(context);
   }
 
@@ -509,6 +516,7 @@ public final class Engine {
   }
 
   public void resumeFocus() {
+    synchronized (db) {
     JSONObject f = db.one("state", "focus");
     if (f == null) return;
     if (!f.optString("phase").equals("ready") && !f.optString("phase").equals("paused"))
@@ -530,6 +538,7 @@ public final class Engine {
     set(f, "elapsed", SystemClock.elapsedRealtime());
     set(f, "boot", boot());
     db.put("state", f);
+    }
     Scheduler.schedule(context);
   }
 
