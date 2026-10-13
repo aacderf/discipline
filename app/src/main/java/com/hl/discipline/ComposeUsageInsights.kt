@@ -17,6 +17,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalDensity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
@@ -141,7 +142,8 @@ private fun usageTime(millis:Long):String {
 @Composable private fun UsageTrend(report:UsageReport) {
     val values=remember(report) { report.daily }
     val max=values.maxOrNull()?.coerceAtLeast(1)?:1
-    Row(Modifier.fillMaxWidth().height(132.dp).testTag("usage-daily-chart"),horizontalArrangement=Arrangement.spacedBy(5.dp),verticalAlignment=Alignment.Bottom) {
+    val chartHeight=(96+40*LocalDensity.current.fontScale).dp
+    Row(Modifier.fillMaxWidth().height(chartHeight).testTag("usage-daily-chart"),horizontalArrangement=Arrangement.spacedBy(5.dp),verticalAlignment=Alignment.Bottom) {
         values.forEachIndexed { index,value -> Column(Modifier.weight(1f).semantics {
             contentDescription="${report.dates[index]}，"+if(report.availableDays[index]) "${value/Rules.MINUTE} 分钟" else "系统未提供记录"
         },horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(4.dp)) {
