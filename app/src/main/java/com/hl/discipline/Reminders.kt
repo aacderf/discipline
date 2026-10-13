@@ -46,9 +46,12 @@ internal object Reminders {
 
     @JvmStatic fun next(context: Context, db: Store, now: Long): Long {
         val settings = db.settings()
+        val planSound = Scheduler.canRemind(context, false, true)
+        val planSilent = Scheduler.canRemind(context, false, false)
         var next = Long.MAX_VALUE
         db.all("instances").forEach { task ->
-            if (mode(task, settings) == "off") return@forEach
+            val mode = mode(task, settings)
+            if (mode == "off" || !(if (mode == "sound") planSound else planSilent)) return@forEach
             listOf(true, false).forEach { isStart ->
                 val at = reminderTime(task, settings, isStart)
                 val anchor = if (isStart) start(task) else task.optLong("due")
@@ -59,7 +62,8 @@ internal object Reminders {
         }
         val timetable = db.one("state", "timetable")
         if (timetable?.optBoolean("confirmed") == true &&
-            settings.optString("classReminderMode", "sound") != "off") {
+            settings.optString("classReminderMode", "sound") != "off" &&
+            Scheduler.canRemind(context, true, settings.optString("classReminderMode", "sound") == "sound")) {
             val sent = sent(timetable)
             val currentWeek = Timetable.weekOf(Rules.date(now)).coerceIn(1, 18)
             for (week in currentWeek..minOf(18, currentWeek + 1)) {

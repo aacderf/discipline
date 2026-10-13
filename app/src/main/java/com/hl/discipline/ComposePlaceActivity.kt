@@ -114,7 +114,8 @@ class ComposePlaceActivity : ComponentActivity() {
         }
         savedInstanceState?.let {
             centerLat = it.getDouble("centerLat", centerLat); centerLng = it.getDouble("centerLng", centerLng)
-            if (it.getBoolean("picked")) rect = Rules.Rect(it.getDouble("north"), it.getDouble("south"), it.getDouble("east"), it.getDouble("west"))
+            rect = if (it.getBoolean("picked")) Rules.Rect(it.getDouble("north"), it.getDouble("south"),
+                it.getDouble("east"), it.getDouble("west")) else null
             it.getDoubleArray("vertices")?.let { values ->
                 vertices = values.toList().chunked(2).filter { pair -> pair.size == 2 }
                     .map { pair -> LatLng(pair[0], pair[1]) }
@@ -124,6 +125,8 @@ class ComposePlaceActivity : ComponentActivity() {
             step = it.getInt("step", step).let { value -> if (value == 1) 0 else value }
             needsGpsConversion = it.getBoolean("needsGpsConversion", needsGpsConversion)
             name = it.getString("name", name)
+            status = it.getString("status", status)
+            undoBoundary = it.getBundle("undoBoundary")?.let(::readSnapshot)
         }
         privacyAccepted = getSharedPreferences("PlaceActivity", 0).getBoolean("mapPrivacyAccepted", false)
         if (privacyAccepted && BuildConfig.AMAP_CONFIGURED) createMap(savedInstanceState?.getBundle("amap"))
@@ -220,6 +223,10 @@ class ComposePlaceActivity : ComponentActivity() {
         outState.putDoubleArray("vertices", (snapshot?.points ?: vertices).flatMap { listOf(it.latitude, it.longitude) }.toDoubleArray())
         outState.putInt("selectedVertex", selectedVertex)
         outState.putBoolean("needsGpsConversion", needsGpsConversion); outState.putString("name", name)
+        outState.putString("status", if (drawing) {
+            if (snapshot?.picked == true) "未完成的绘制已取消，原范围已恢复" else "未完成的绘制已取消，请重新圈选"
+        } else status)
+        undoBoundary?.let { outState.putBundle("undoBoundary", writeSnapshot(it)) }
         (snapshot?.bounds ?: rect)?.let { outState.putDouble("north", it.north); outState.putDouble("south", it.south)
             outState.putDouble("east", it.east); outState.putDouble("west", it.west) }
         val mapState = Bundle(); mapView?.onSaveInstanceState(mapState); outState.putBundle("amap", mapState)
@@ -510,6 +517,20 @@ class ComposePlaceActivity : ComponentActivity() {
             else "已选第 ${index + 1} 个点，拖动微调或删除；修改后需保存"
     }
     private fun boundarySnapshot() = TraceSnapshot(vertices.toList(), rect, picked, centerLat, centerLng, dirty)
+    private fun writeSnapshot(snapshot: TraceSnapshot) = Bundle().apply {
+        putDoubleArray("points", snapshot.points.flatMap { listOf(it.latitude, it.longitude) }.toDoubleArray())
+        putDouble("latitude", snapshot.latitude); putDouble("longitude", snapshot.longitude)
+        putBoolean("picked", snapshot.picked); putBoolean("dirty", snapshot.dirty)
+        snapshot.bounds?.let { putDoubleArray("bounds", doubleArrayOf(it.north, it.south, it.east, it.west)) }
+    }
+    private fun readSnapshot(state: Bundle): TraceSnapshot {
+        val points = (state.getDoubleArray("points") ?: doubleArrayOf()).toList().chunked(2)
+            .filter { it.size == 2 }.map { LatLng(it[0], it[1]) }
+        val bounds = state.getDoubleArray("bounds")?.takeIf { it.size == 4 }
+            ?.let { Rules.Rect(it[0], it[1], it[2], it[3]) }
+        return TraceSnapshot(points, bounds, state.getBoolean("picked"), state.getDouble("latitude"),
+            state.getDouble("longitude"), state.getBoolean("dirty"))
+    }
     private fun removeSelectedVertex() {
         try {
             val next = BoundaryEditing.remove(vertices.map { doubleArrayOf(it.latitude, it.longitude) }, selectedVertex)

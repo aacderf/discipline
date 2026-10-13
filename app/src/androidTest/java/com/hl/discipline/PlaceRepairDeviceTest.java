@@ -107,8 +107,16 @@ public class PlaceRepairDeviceTest {
       assertNotNull(next); next.click(); tap("删除选点"); text("选点已删除");
       device.takeScreenshot(new File(context.getExternalCacheDir(), "map-edit-0.11.8.png"));
       assertEquals(4, Store.polygon(db.one("places", "map-repair")).points.size());
+      scenario.recreate(); text("确认范围");
       tap("撤销选区修改"); text("已撤销选区修改");
-      tap("清空选区"); text("选区已清空"); tap("撤销选区修改"); text("确认范围");
+      tap("清空选区"); text("选区已清空"); scenario.recreate(); text("选区已清空");
+      scenario.onActivity(activity -> {
+        try {
+          java.lang.reflect.Field bounds = ComposePlaceActivity.class.getDeclaredField("rect");
+          bounds.setAccessible(true); assertNull(bounds.get(activity));
+        } catch (Exception e) { throw new AssertionError(e); }
+      });
+      tap("撤销选区修改"); text("确认范围");
       next = device.wait(Until.findObject(By.desc("下一个边界点")), 6000); assertNotNull(next);
       next.click(); tap("删除选点"); tap("确认范围"); tap("保存修改"); device.waitForIdle();
       assertEquals(3, Store.polygon(db.one("places", "map-repair")).points.size());

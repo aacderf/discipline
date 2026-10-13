@@ -190,8 +190,7 @@ internal fun TimetableScreen(activity: ComposeMainActivity, onScrolled: (Boolean
             Caption("${Timetable.rows(state).count { it.optBoolean("review") }} 条待校对；确认后开启课程提醒。")
             Primary("确认课表并启用提醒", Modifier.fillMaxWidth()) {
                 if (activity.act {
-                    Store.set(state, "confirmed", true)
-                    activity.db.put("state", state)
+                    Timetable.confirm(activity.db)
                     Scheduler.schedule(activity)
                 }) management = false
             }
@@ -231,15 +230,15 @@ internal fun TimetableScreen(activity: ComposeMainActivity, onScrolled: (Boolean
                 }
             },
             confirmButton = { TextButton(enabled = fits && accepted.isNotEmpty(), onClick = {
+                var imported = 0
                 if (activity.act {
-                    val current = Timetable.state(activity.db)
-                    val saved = Timetable.rows(current)
-                    val valid = Timetable.importable(saved, pending)
-                    require(saved.size + valid.size <= 500) { "课表最多保存 500 条课程" }
-                    Store.set(current, "meetings", JSONArray(saved + valid))
-                    activity.db.put("state", current)
+                    imported = Timetable.importCourses(activity.db, pending)
                     Scheduler.schedule(activity)
-                }) csvPreview = null
+                }) {
+                    csvPreview = null
+                    activity.toast("已导入 $imported 条课程" +
+                        if (imported < pending.size) "，${pending.size - imported} 条冲突未导入" else "")
+                }
             }) { Text("导入无冲突课程") } },
             dismissButton = { TextButton(onClick = { csvPreview = null }) { Text("返回") } })
     }

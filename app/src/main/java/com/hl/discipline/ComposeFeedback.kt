@@ -26,7 +26,7 @@ import androidx.compose.ui.unit.dp
 @Composable
 internal fun ProgressTrack(actual: Float, label: String, modifier: Modifier = Modifier,
                            color: Color = AppColors.current.chartFocus) {
-    val bounded = actual.coerceIn(0f, 1f)
+    val bounded = if (actual.isFinite()) actual.coerceIn(0f, 1f) else 0f
     val position = animateFloatAsState(bounded,
         tween(if (LocalMotionEnabled.current) AppMotion.progress else 0, easing = AppMotion.easing),
         label = "真实进度位置")

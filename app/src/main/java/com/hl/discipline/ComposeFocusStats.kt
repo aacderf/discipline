@@ -93,9 +93,13 @@ internal fun FocusScreen(activity: ComposeMainActivity, nav: NavHostController, 
     val focus = remember(revision, beat) { activity.db.one("state", "focus") }
     val settings = remember(revision) { activity.db.settings() }
     val tasks = remember(revision) { activity.engine.current(System.currentTimeMillis()).filter {
-        it.optString("status") == "open" && !activity.engine.hasChildren(it)
+        activity.engine.canFocus(it, System.currentTimeMillis())
     } }
     val taskId = activity.focusTaskId
+    LaunchedEffect(taskId, revision, focus == null) {
+        if (focus == null && taskId.isNotEmpty() && tasks.none { it.optString("id") == taskId })
+            activity.selectFocusTask("")
+    }
     val minutes = activity.focusMinutes
     val forward = activity.focusForward
     val apps = activity.focusApps
@@ -118,7 +122,7 @@ internal fun FocusScreen(activity: ComposeMainActivity, nav: NavHostController, 
         } else if (phase != "break") showingCompletion = false
     }
     val presentation = focusPresentation(focus, showingCompletion)
-    val activeTask = (focus?.optString("task")?.takeIf { it.isNotEmpty() } ?: taskId)
+    val activeTask = (if (focus != null) focus.optString("task") else taskId)
         .takeIf { it.isNotEmpty() }?.let { activity.db.one("instances", it) }
     val title = activeTask?.optString("name") ?: "自由专注"
     val location = (focus?.optString("place")?.takeIf { it.isNotEmpty() }
@@ -259,7 +263,7 @@ internal fun FocusScreen(activity: ComposeMainActivity, nav: NavHostController, 
                                 Box(Modifier.weight(1f)) {
                                     SelectField("关联任务", listOf("自由专注") + tasks.map { it.optString("name") },
                                         (tasks.indexOfFirst { it.optString("id") == taskId } + 1).coerceAtLeast(0)) {
-                                        activity.focusTaskId = if (it == 0) "" else tasks[it - 1].optString("id")
+                                        activity.selectFocusTask(if (it == 0) "" else tasks[it - 1].optString("id"))
                                     }
                                 }
                                 Input("分钟", minutes, { activity.focusMinutes = it; activity.focusPreset = "自定义" }, Modifier.weight(1f),

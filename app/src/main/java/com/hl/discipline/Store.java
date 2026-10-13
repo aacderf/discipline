@@ -272,6 +272,9 @@ public final class Store extends SQLiteOpenHelper {
                 || o.optInt("until", 1440) > 1440
                 || o.optInt("from", 0) >= o.optInt("until", 1440)))
           throw new IllegalArgumentException("备份中的计划格式无效");
+        if (t.equals("instances") && o.has("manual")
+            && (!Double.isFinite(o.optDouble("manual")) || o.optDouble("manual") < 0))
+          throw new IllegalArgumentException("备份中的任务进度无效");
         if (t.equals("places")) {
           if (!Double.isFinite(o.optDouble("lat")) || !Double.isFinite(o.optDouble("lng"))
               || Math.abs(o.optDouble("lat")) > 85 || Math.abs(o.optDouble("lng")) > 180)

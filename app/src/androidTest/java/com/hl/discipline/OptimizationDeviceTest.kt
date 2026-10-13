@@ -4,7 +4,7 @@ import android.content.Intent
 import android.os.Build
 import android.os.Looper
 import androidx.compose.ui.test.*
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.UiDevice
 import java.io.File
@@ -61,6 +61,33 @@ class OptimizationDeviceTest {
         }
         rule.waitUntil(10_000) { rule.activity.dataOperation.isEmpty() }
         assertEquals("原有计划",rule.activity.db.one("plans","preserved").optString("name"))
+    }
+
+    @Test fun staleFocusSelectionClearsAndFreeSessionKeepsOwnTitle() {
+        rule.runOnUiThread {
+            val now = System.currentTimeMillis()
+            rule.activity.db.put("instances",Store.obj("id","finished","name","已结束的任务","status","done",
+                "start",now-60_000,"due",now+60_000))
+            rule.activity.selectFocusTask("finished"); rule.activity.selectedTab = "focus"; rule.activity.refresh()
+        }
+        rule.waitUntil(6000) { rule.activity.focusTaskId.isEmpty() }
+        assertNull(rule.activity.db.one("state","focusSelection"))
+        rule.onNodeWithText("自由专注").assertIsDisplayed()
+        rule.runOnUiThread {
+            val now = System.currentTimeMillis()
+            rule.activity.engine.startFocus("","",1,false,JSONArray())
+            rule.activity.db.put("instances",Store.obj("id","next","name","下一件事","status","open",
+                "planId","next-plan","cycle","once","metric","check","target",1,
+                "created",now-60_000,"start",now-60_000,"due",now+60_000,"from",0,"until",1440))
+            rule.activity.selectFocusTask("next"); rule.activity.refresh()
+        }
+        rule.onNodeWithText("自由专注").assertIsDisplayed()
+        rule.onNodeWithText("下一件事").assertDoesNotExist()
+        assertEquals(0.0,rule.activity.engine.progress(rule.activity.db.one("instances","next"),System.currentTimeMillis()),0.0001)
+        rule.activity.engine.pauseFocus(); rule.runOnUiThread { rule.activity.refresh() }
+        rule.onNodeWithText("继续专注").assertIsDisplayed()
+        UiDevice.getInstance(InstrumentationRegistry.getInstrumentation()).takeScreenshot(
+            File(rule.activity.getExternalFilesDir(null),"focus-flow-0.11.9.png"))
     }
 
     @Test fun concurrentStartsHaveOneOwnerAndFocusResumeKeepsConfiguration() {

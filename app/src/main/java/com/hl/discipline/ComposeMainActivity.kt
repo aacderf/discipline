@@ -396,10 +396,13 @@ class ComposeMainActivity : ComponentActivity() {
     }
 
     internal fun startFocusFor(id: String, nav: NavHostController) {
-        focusTaskId = id
-        if (db.one("state", "focus") == null)
-            db.put("state", Store.obj("id", "focusSelection", "task", id))
+        selectFocusTask(id)
         openTab("focus", nav)
+    }
+    internal fun selectFocusTask(id: String) {
+        focusTaskId = id
+        if (id.isEmpty()) db.remove("state", "focusSelection")
+        else db.put("state", Store.obj("id", "focusSelection", "task", id))
     }
     internal fun openTab(tab: String, nav: NavHostController) {
         selectedTab = tab
@@ -416,6 +419,10 @@ class ComposeMainActivity : ComponentActivity() {
         val cycles = focusCycles.toIntOrNull() ?: throw IllegalArgumentException("请填写轮次")
         require(shortBreak in 1..120 && longBreak in 1..180 && cycles in 1..12) { "休息或轮次超出范围" }
         val task = db.one("instances", focusTaskId)
+        if (focusTaskId.isNotEmpty() && !engine.canFocus(task, System.currentTimeMillis())) {
+            selectFocusTask("")
+            throw IllegalStateException("关联任务已完成或失效，请重新选择后开始")
+        }
         engine.startFocus(focusTaskId, task?.optString("place") ?: "", minutes, focusForward,
             jsonArray(focusApps), shortBreak, longBreak, cycles)
     }

@@ -44,6 +44,23 @@ internal object Timetable {
         db.put("state", current)
     }
 
+    fun confirm(db: Store) = synchronized(db) {
+        val current = state(db)
+        Store.set(current, "confirmed", true)
+        db.put("state", current)
+    }
+
+    fun importCourses(db: Store, incoming: List<JSONObject>): Int = synchronized(db) {
+        val current = state(db)
+        val existing = rows(current)
+        val accepted = importable(existing, incoming)
+        require(accepted.isNotEmpty()) { "课程已发生变化，当前没有可导入的无冲突课程" }
+        require(existing.size + accepted.size <= 500) { "课表最多保存 500 条课程" }
+        Store.set(current, "meetings", JSONArray(existing + accepted))
+        db.put("state", current)
+        accepted.size
+    }
+
     fun upsert(state: JSONObject, row: JSONObject, onlyWeek: Int? = null): JSONObject {
         val list = rows(state).toMutableList()
         val index = list.indexOfFirst { it.optString("id") == row.optString("id") }

@@ -78,6 +78,21 @@ public class EngineDeviceTest {
   }
 
   @Test
+  public void legacyMissingProgressIsZeroAndMalformedProgressBackupIsRejected() {
+    JSONObject legacy = task("legacy-progress", "check");
+    legacy.remove("manual"); set(legacy, "due", now + Rules.MINUTE);
+    db.put("instances", legacy);
+    assertNotNull(db.prepareImport(db.exportJson()));
+    assertEquals(0, e.progress(legacy, now), 0.0001);
+    for (Object invalid : Arrays.asList("invalid", -1)) {
+      JSONObject backup = parse(db.exportJson());
+      set(backup.optJSONArray("instances").optJSONObject(0), "manual", invalid);
+      assertThrows(IllegalArgumentException.class, () -> db.prepareImport(backup.toString()));
+      assertFalse(db.one("instances", "legacy-progress").has("manual"));
+    }
+  }
+
+  @Test
   public void settlementIsIdempotentAndTrialIsSnapshot() {
     db.put("instances", task("failed", "check"));
     e.tick();

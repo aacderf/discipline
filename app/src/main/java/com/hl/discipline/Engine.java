@@ -149,7 +149,7 @@ public final class Engine {
 
   public double progress(JSONObject i, long now) {
     String metric = i.optString("metric");
-    double manual = i.optDouble("manual");
+    double manual = i.optDouble("manual", 0);
     if (metric.equals("check") || metric.equals("count")) return manual;
     String place = i.optString("place");
     List<long[]> r =
@@ -379,6 +379,8 @@ public final class Engine {
     synchronized (db) {
     if (db.one("state", "focus") != null) throw new IllegalStateException("请先结束当前专注");
     long now = System.currentTimeMillis();
+    if (!task.isEmpty() && !canFocus(db.one("instances", task), now))
+      throw new IllegalStateException("关联任务已完成、未开始或已失效，请重新选择");
     if (!place.isEmpty() && !inside(place, now))
       throw new IllegalStateException("请先开启地点监测并确认已到达地点");
     db.put(
@@ -429,6 +431,12 @@ public final class Engine {
         && now < l.optLong("validUntil", l.optLong("time") + 120_000)
         && l.optString("place").equals(place)
         && l.optBoolean("reliable");
+  }
+
+  /** The same eligibility is used by the picker and the authoritative start check. */
+  public boolean canFocus(JSONObject task, long now) {
+    return task != null && task.optString("status").equals("open")
+        && task.optLong("start") <= now && task.optLong("due") > now && !hasChildren(task);
   }
 
   void updateFocus(long now) {
@@ -522,7 +530,9 @@ public final class Engine {
     if (!f.optString("phase").equals("ready") && !f.optString("phase").equals("paused"))
       throw new IllegalStateException("当前阶段无需继续");
     long now = System.currentTimeMillis();
-    if (!f.optString("place").isEmpty() && !inside(f.optString("place"), now))
+    boolean resumeBreak = f.optString("phase").equals("paused")
+        && f.optString("pausedPhase").equals("break");
+    if (!resumeBreak && !f.optString("place").isEmpty() && !inside(f.optString("place"), now))
       throw new IllegalStateException("尚未确认返回指定地点");
     if (f.optString("phase").equals("ready")) {
       set(f, "cycle", f.optInt("cycle") + 1);
@@ -531,7 +541,7 @@ public final class Engine {
     set(
         f,
         "phase",
-        f.optString("phase").equals("paused") && f.optString("pausedPhase").equals("break")
+        resumeBreak
             ? "break"
             : "work");
     set(f, "checkpoint", now);

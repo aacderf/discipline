@@ -98,9 +98,7 @@ public final class Scheduler {
     channels(c);
     String channel = (course ? "class" : "plan") + (sound ? "_sound" : "_silent");
     NotificationManager manager = c.getSystemService(NotificationManager.class);
-    if (!manager.areNotificationsEnabled()
-        || manager.getNotificationChannel(channel).getImportance() == NotificationManager.IMPORTANCE_NONE)
-      return false;
+    if (!canRemind(c, course, sound)) return false;
     try {
       manager.notify(id, new Notification.Builder(c, channel)
               .setSmallIcon(R.drawable.ic_app)
@@ -115,6 +113,14 @@ public final class Scheduler {
       /* The permissions page reports disabled notifications. */
       return false;
     }
+  }
+
+  public static boolean canRemind(Context c, boolean course, boolean sound) {
+    NotificationManager manager = c.getSystemService(NotificationManager.class);
+    if (!manager.areNotificationsEnabled()) return false;
+    NotificationChannel channel = manager.getNotificationChannel(
+        (course ? "class" : "plan") + (sound ? "_sound" : "_silent"));
+    return channel == null || channel.getImportance() != NotificationManager.IMPORTANCE_NONE;
   }
 
   public static void schedule(Context c) {
