@@ -59,7 +59,7 @@ public final class FallbackBlockService extends Service {
 
   static boolean hasRule(Context context) {
     Store store = Store.get(context);
-    JSONArray limits = store.settings().optJSONArray("appLimits");
+    JSONArray limits = UsageWeekPlans.effectiveLimits(store, System.currentTimeMillis());
     for (int i = 0; limits != null && i < limits.length(); i++) {
       JSONObject rule = limits.optJSONObject(i);
       if (rule != null && rule.optBoolean("enabled", true) &&

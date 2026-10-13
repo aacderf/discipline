@@ -128,9 +128,9 @@ internal fun FocusScreen(activity: ComposeMainActivity, nav: NavHostController, 
     val location = (focus?.optString("place")?.takeIf { it.isNotEmpty() }
         ?: activeTask?.optString("place")?.takeIf { it.isNotEmpty() })
         ?.let { activity.db.one("places", it)?.optString("name") }
-    val limitCount = settings.optJSONArray("appLimits")?.let { rules ->
+    val limitCount = UsageWeekPlans.effectiveLimits(activity.db,System.currentTimeMillis()).let { rules ->
         (0 until rules.length()).count { rules.optJSONObject(it)?.optBoolean("enabled", true) == true }
-    } ?: 0
+    }
     var preferencesOpen by rememberSaveable { mutableStateOf(false) }
     BoxWithConstraints(Modifier.fillMaxSize().imePadding()) {
         val compactWindow = maxHeight < 580.dp || LocalDensity.current.fontScale > 1.15f
@@ -348,6 +348,7 @@ internal fun StatsScreen(activity: ComposeMainActivity, nav: NavHostController) 
     DraggableSegment(listOf("今天", "本周", "本月"), when (selectedRange) { 1 -> 0; 7 -> 1; else -> 2 }, activity.motionEnabled) {
         selectedRange = listOf(1, 7, 30)[it]
     }
+    Secondary("应用使用与下周计划") { nav.navigate("usage-insights") }
     if (error.isNotEmpty()) {
         Caption(error)
         Secondary("重新整理统计") { retry++ }

@@ -507,7 +507,9 @@ private fun DisciplineApp(activity: ComposeMainActivity) {
             PlanFormScreen(activity, nav, entry.arguments?.getString("id").orEmpty())
         }
         composable("settings") { SettingsScreen(activity, nav) }
-        composable("app-limits") { AppLimitsScreen(activity, onBack = { nav.popBackStack() }) }
+        composable("app-limits") { AppLimitsScreen(activity, onBack = { nav.popBackStack() },
+            onInsights = { nav.navigate("usage-insights") }) }
+        composable("usage-insights") { UsageInsightsScreen(activity, onBack = { nav.popBackStack() }) }
         composable("quotes") { QuotesScreen(activity, nav) }
         composable("events") { RecordScreen(activity, nav, "events", "操作与异常记录") }
         composable("penalties") { RecordScreen(activity, nav, "penalties", "限制记录") }

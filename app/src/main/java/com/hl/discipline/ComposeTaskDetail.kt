@@ -105,6 +105,11 @@ internal fun TaskDetail(activity: ComposeMainActivity, nav: NavHostController, i
                     })
                     if (apps != null && apps.length() > 0) Caption("限制应用：${appNames(activity, apps)}")
                     if (activity.db.settings().optBoolean("trial", true)) Caption("任务限制仅记录，暂不拦截")
+                    if (task.optString("place").isNotEmpty()) Caption(if (Rules.locationNeedsReview(
+                        task.optString("coveragePolicy"), task.optLong("start"), task.optLong("due")))
+                        "定位缺口先核验，确认后结算" else "按已记录进度结算，定位缺口不计入完成")
+                    Caption("若后台晚结算，限制从实际结算时开始；每日限制上限仍有效。")
+                    if (activity.engine.hasChildren(task)) Caption("父计划汇总子任务，未完成限制由子任务执行，避免重复限制。")
                     if (task.optString("metric") == "presence" && task.optString("status") in listOf("open", "review"))
                         TextButton(onClick = { penaltySettings = true }) { Text("调整未完成限制") }
                 }
@@ -136,8 +141,8 @@ internal fun TaskDetail(activity: ComposeMainActivity, nav: NavHostController, i
     if (manual || leave) ManualDialog(activity, task, leave,
         onSaved = { transitionId?.value = null }, onDismiss = { manual = false; leave = false })
     if (penaltySettings) DwellPenaltyDialog(activity, task) { penaltySettings = false }
-    if (failConfirm) ConfirmDialog("确认核验结果？", "按原定截止时间结算限制，已过去的时段不会顺延。", {
-        if (activity.act { activity.engine.fail(task, System.currentTimeMillis()); activity.engine.tick() }) {
+    if (failConfirm) ConfirmDialog("确认核验结果？", "按已记录进度结算，未完成限制从现在开始；每日限制上限仍有效。", {
+        if (activity.act { activity.engine.confirmFailure(task.optString("id"), System.currentTimeMillis()); activity.engine.tick() }) {
             transitionId?.value = null
             failConfirm = false
         }

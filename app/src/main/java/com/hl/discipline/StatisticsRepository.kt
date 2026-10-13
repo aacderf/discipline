@@ -18,7 +18,7 @@ internal object StatisticsRepository {
                 db.all("instances").map { row ->
                     ReportTask(row.optString("id"), row.optString("planId"), row.optString("status"),
                         row.optString("metric"), row.optString("place"), row.optDouble("target", 1.0),
-                        row.optDouble("manual"), row.optLong("start"), row.optLong("due"),
+                        row.optDouble("manual", 0.0), row.optLong("start"), row.optLong("due"),
                         row.optInt("from", 0), row.optInt("until", 1440), Engine.days(row))
                 }, db.all("plans").map { ReportPlan(it.optString("id"), it.optString("name"), it.optString("parent")) },
                 db.all("places").map { ReportPlace(it.optString("id"), it.optString("name")) })

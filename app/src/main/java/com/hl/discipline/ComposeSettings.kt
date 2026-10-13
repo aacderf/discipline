@@ -131,7 +131,7 @@ internal fun SettingsScreen(activity: ComposeMainActivity, nav: NavHostControlle
     val battery = activity.getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(activity.packageName)
     val access = activity.accessibilityStatus()
     val usageAccess = AppUsageLimits.hasAccess(activity)
-    val appLimitCount = settings.optJSONArray("appLimits")?.length() ?: 0
+    val appLimitCount = UsageWeekPlans.effectiveLimits(activity.db,System.currentTimeMillis()).length()
     val fallbackEnabled = settings.optBoolean("fallbackEnabled")
     val overlayAccess = Settings.canDrawOverlays(activity)
     val fallbackHeartbeat = activity.db.one("state", "fallbackHeartbeat")

@@ -131,6 +131,7 @@ public final class Scheduler {
       if (i.optString("status").equals("open") && i.optLong("due") > now)
         next = Math.min(next, i.optLong("due"));
     next = Math.min(next, Reminders.next(c, db, now));
+    next = Math.min(next, UsageWeekPlans.next(db, now));
     JSONObject f = db.one("state", "focus");
     if (f != null
         && (f.optString("phase").equals("work") && !f.optBoolean("forward")

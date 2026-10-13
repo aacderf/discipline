@@ -9,6 +9,19 @@ public final class Rules {
   public static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
   public static final long MINUTE = 60_000L;
 
+  public static boolean locationNeedsReview(String policy, long start, long due) {
+    return policy.equals("review") || (!policy.equals("recorded") && due - start < 24 * 60 * MINUTE);
+  }
+
+  public static long penaltyStart(long due, int clockMinute, long settledAt) {
+    long scheduled = due;
+    if (clockMinute >= 0) {
+      scheduled = at(date(due), clockMinute);
+      if (scheduled < due) scheduled = at(date(due).plusDays(1), clockMinute);
+    }
+    return Math.max(scheduled, settledAt);
+  }
+
   public static LocalDate date(long ms) {
     return Instant.ofEpochMilli(ms).atZone(ZONE).toLocalDate();
   }

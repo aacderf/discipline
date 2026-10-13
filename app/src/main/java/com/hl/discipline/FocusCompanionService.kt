@@ -124,7 +124,7 @@ class FocusCompanionService : Service() {
                         val progress = engine.progress(task, now)
                         CompanionTask(task.optString("name"), "${numberText(progress)} / ${numberText(task.optDouble("target", 1.0))}${taskUnit(task)}",
                             completed(task, now))
-                    }, tasks.size, if (detailed) readLimits(settings, now) else emptyList(), detailed)
+                    }, tasks.size, if (detailed) readLimits(now) else emptyList(), detailed)
                 val event = db.one("state", "focusEvent")
                 handler.post {
                     if (destroyed) return@post
@@ -158,8 +158,8 @@ class FocusCompanionService : Service() {
     private fun completed(task: JSONObject, now: Long) = task.optString("status") == "done" ||
         (engine.hasChildren(task) && engine.childrenDone(task)) ||
         engine.progress(task, now) >= task.optDouble("target", 1.0)
-    private fun readLimits(settings: JSONObject, now: Long): List<CompanionLimit> {
-        val rules = settings.optJSONArray("appLimits") ?: return emptyList()
+    private fun readLimits(now: Long): List<CompanionLimit> {
+        val rules = UsageWeekPlans.effectiveLimits(db, now)
         return (0 until rules.length()).mapNotNull { index ->
             val rule = rules.optJSONObject(index) ?: return@mapNotNull null
             if (!rule.optBoolean("enabled", true)) return@mapNotNull null

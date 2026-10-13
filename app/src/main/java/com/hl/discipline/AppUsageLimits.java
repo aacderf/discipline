@@ -15,6 +15,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /** Reads the system's local usage history for one selected app. */
@@ -42,8 +44,10 @@ public final class AppUsageLimits {
   }
 
   private static final Map<String, Cached> cache = new HashMap<>();
+  private static Map<String, Usage> batch = Collections.emptyMap();
+  private static long batchAt;
 
-  public static synchronized void invalidate() { cache.clear(); }
+  public static synchronized void invalidate() { cache.clear(); batch=Collections.emptyMap(); batchAt=0; }
 
   /** Best-effort foreground detection for the explicitly enabled fallback service. */
   static String foregroundPackage(Context context, long from, long now, String previous) {
@@ -111,6 +115,11 @@ public final class AppUsageLimits {
         && Rules.date(now).equals(Rules.date(saved.at)))
       return saved.usage;
 
+    if(batchAt>0 && now>=batchAt && (now==batchAt || now-batchAt<maxAge)
+        && Rules.date(now).equals(Rules.date(batchAt))) {
+      Usage usage=batch.getOrDefault(pkg,new Usage(true,0,0));
+      cache.put(pkg,new Cached(batchAt,usage)); return usage;
+    }
     UsageStatsManager manager = context.getSystemService(UsageStatsManager.class);
     if (manager == null) return new Usage(false, 0, 0);
     if ((context.getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0)
@@ -122,18 +131,41 @@ public final class AppUsageLimits {
         UsageStatsManager.INTERVAL_DAILY, weekStart, now);
     UsageEvents events = manager.queryEvents(Math.max(0, todayStart - Rules.MINUTE * 60), now);
     if (stats == null || events == null) return new Usage(false, 0, 0);
-    long todayFromStats = 0, earlierThisWeek = 0;
+    Map<String,long[]> grouped=new HashMap<>();
     for (UsageStats s : stats) {
-      if (!pkg.equals(s.getPackageName())) continue;
+      long[] sums=grouped.computeIfAbsent(s.getPackageName(),k->new long[2]);
       long first = s.getFirstTimeStamp();
-      if (first >= todayStart) todayFromStats += s.getTotalTimeInForeground();
-      else if (first >= weekStart) earlierThisWeek += s.getTotalTimeInForeground();
+      if (first >= todayStart) sums[0] += s.getTotalTimeInForeground();
+      else if (first >= weekStart) sums[1] += s.getTotalTimeInForeground();
     }
-    long todayFromEvents = foregroundToday(events, pkg, todayStart, now);
-    long today = Math.max(todayFromStats, todayFromEvents);
-    Usage usage = new Usage(true, today, earlierThisWeek + today);
+    Map<String,UsageTimeline.Totals> eventTotals=UsageTimeline.calculate(points(events),
+        new long[]{todayStart,Rules.at(day.plusDays(1),0)},now);
+    Set<String> packages=new HashSet<>(grouped.keySet()); packages.addAll(eventTotals.keySet());
+    Map<String,Usage> loaded=new HashMap<>();
+    for(String name:packages) {
+      long[] sums=grouped.getOrDefault(name,new long[2]);
+      long measured=eventTotals.containsKey(name)?eventTotals.get(name).millis[0]:0;
+      long today=Math.max(sums[0],measured);
+      loaded.put(name,new Usage(true,today,sums[1]+today));
+    }
+    batch=loaded; batchAt=now;
+    Usage usage = loaded.getOrDefault(pkg,new Usage(true,0,0));
     cache.put(pkg, new Cached(now, usage));
     return usage;
+  }
+
+  static List<UsageTimeline.Point> points(UsageEvents events) {
+    List<UsageTimeline.Point> points=new ArrayList<>();
+    UsageEvents.Event event=new UsageEvents.Event();
+    while(events.hasNextEvent()) {
+      events.getNextEvent(event); int kind=0;
+      if(event.getEventType()==UsageEvents.Event.ACTIVITY_RESUMED) kind=UsageTimeline.RESUME;
+      else if(event.getEventType()==UsageEvents.Event.ACTIVITY_PAUSED) kind=UsageTimeline.PAUSE;
+      else if(event.getEventType()==UsageEvents.Event.ACTIVITY_STOPPED) kind=UsageTimeline.STOP;
+      else if(event.getEventType()==UsageEvents.Event.SCREEN_NON_INTERACTIVE || event.getEventType()==UsageEvents.Event.KEYGUARD_SHOWN) kind=UsageTimeline.SCREEN_OFF;
+      if(kind!=0) points.add(new UsageTimeline.Point(event.getTimeStamp(),event.getPackageName(),event.getClassName(),kind));
+    }
+    return points;
   }
 
   static long dailyBlockEnd(Usage usage, int minutes, long now) {

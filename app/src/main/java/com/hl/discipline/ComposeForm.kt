@@ -396,7 +396,7 @@ internal fun DwellPenaltyDialog(activity: ComposeMainActivity, task: JSONObject,
     AlertDialog(onDismissRequest = onDismiss, title = { Text("未完成后的限制") },
         text = { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             SelectField("限制时长来源", listOf("固定时长", "剩余停留时间"), if (remaining) 1 else 0) { remaining = it == 1 }
-            if (remaining) Caption("截止时还差多少分钟，就限制所选应用多久。沿用每日上限；定位记录有缺口时先核验。")
+            if (remaining) Caption("截止时还差多少分钟，就限制所选应用多久。长任务按已记录进度结算，定位缺口不算完成；每日上限仍有效。")
             else Input("固定限制分钟，0 为不限制", fixed, { fixed = it }, keyboard = KeyboardType.Number)
             Secondary("选择限制应用") { picking = true }
             Caption(appNames(activity, jsonArray(apps)))

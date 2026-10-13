@@ -246,7 +246,8 @@ public final class Engine {
       List<long[]> w = windows(i, i.optLong("due"));
       long expected = Rules.union(w),
           covered = Rules.union(Rules.intersect(ranges("coverage", null, null), w));
-      if (expected - covered > 180_000) {
+      if (expected - covered > 180_000 && Rules.locationNeedsReview(
+          i.optString("coveragePolicy"), i.optLong("start"), i.optLong("due"))) {
         set(i, "status", "review");
         set(i, "note", "定位记录存在缺口，请核验后结算");
         db.put("instances", i);
@@ -254,6 +255,8 @@ public final class Engine {
             context, Math.abs(i.optString("id").hashCode()), "任务需要核验", i.optString("name"));
         return;
       }
+      if (expected - covered > 180_000)
+        set(i, "note", "定位记录有缺口，缺口未计入停留；按已记录进度结算");
     }
     fail(i, now);
   }
@@ -270,12 +273,9 @@ public final class Engine {
     if (db.one("penalties", pid) != null || duration <= 0) return;
     JSONArray apps = i.optJSONArray("apps");
     if (apps == null || apps.length() == 0) return;
-    long requested = i.optLong("due"), start = requested;
+    long requested = i.optLong("due");
     int next = i.optInt("penaltyAt", -1);
-    if (next >= 0) {
-      start = Rules.at(Rules.date(requested), next);
-      if (start < requested) start = Rules.at(Rules.date(requested).plusDays(1), next);
-    }
+    long start = Rules.penaltyStart(requested, next, now);
     long cap = db.settings().optLong("capHours", 8) * 60 * Rules.MINUTE;
     boolean trial = db.settings().optBoolean("trial", true);
     long end = start, requestedEnd = start + duration;
@@ -317,12 +317,27 @@ public final class Engine {
             "end",
             end,
             "requestedMillis", duration,
+            "settledAt", now,
+            "due", requested,
             "mode", i.optString("penaltyMode", "fixed"),
             "trial",
             trial));
-    db.log("penalty", (trial ? "试运行记录：" : "已安排限制：") + i.optString("name"));
+    db.log("penalty", (trial ? "试运行记录：" : end > start ? "已安排限制：" : "每日限制上限已用尽：") + i.optString("name"));
     Scheduler.notify(
-        context, 300, "任务未完成", i.optString("name") + (trial ? " · 本次仅记录" : " · 已按约定安排应用限制"));
+        context, 300, "任务未完成", i.optString("name") + (trial ? " · 本次仅记录"
+            : end > start ? " · 已按约定安排应用限制" : " · 每日限制上限已用尽，本次未拦截"));
+  }
+
+  public void confirmFailure(String taskId, long now) {
+    synchronized (db) {
+      db.atomic(() -> {
+        JSONObject current = db.one("instances", taskId);
+        if (current == null || !current.optString("status").equals("review"))
+          throw new IllegalStateException("任务状态已变化，请重新查看");
+        fail(current, now);
+      });
+    }
+    Scheduler.schedule(context);
   }
 
   long penaltyDuration(JSONObject task) {
@@ -610,8 +625,8 @@ public final class Engine {
                   : f.optLong("checkpoint") + f.optLong("remaining"));
       name = "正在专注";
     }
-    JSONArray limits = db.settings().optJSONArray("appLimits");
-    if (limits != null && !BlockService.protectedApp(context, pkg)) {
+    JSONArray limits = UsageWeekPlans.effectiveLimits(db, now);
+    if (limits != null && limits.length() > 0 && !BlockService.protectedApp(context, pkg)) {
       for (int index = 0; index < limits.length(); index++) {
         JSONObject limit = limits.optJSONObject(index);
         if (limit == null || !limit.optBoolean("enabled", true)

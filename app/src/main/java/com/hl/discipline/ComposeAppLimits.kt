@@ -27,7 +27,8 @@ internal fun ComposeMainActivity.appRestrictionMode(): String {
 
 @Composable
 internal fun AppLimitsScreen(activity: ComposeMainActivity, onBack: () -> Unit,
-                             scrollState: androidx.compose.foundation.ScrollState? = null) {
+                             scrollState: androidx.compose.foundation.ScrollState? = null,
+                             onInsights:(()->Unit)?=null) {
     val revision = activity.revision
     val limits = remember(revision) {
         activity.db.settings().optJSONArray("appLimits")?.let { array ->
@@ -50,6 +51,12 @@ internal fun AppLimitsScreen(activity: ComposeMainActivity, onBack: () -> Unit,
 
     Screen("应用限额", onBack = onBack, scrollState = scrollState) {
         Caption("每日 00:00、每周一 00:00 重置。任一限额用尽，该应用将限制至对应周期结束。")
+        if(onInsights!=null) Secondary("应用使用与下周计划") { onInsights() }
+        val weekPlans=UsageWeekPlans.plans(activity.db).filter { it.optBoolean("enabled",true) && it.optLong("end")>System.currentTimeMillis() }
+        if(weekPlans.isNotEmpty()) Panel {
+            Text("已安排 ${weekPlans.size} 周使用计划",style=MaterialTheme.typography.titleMedium)
+            Caption("${UsageWeekPlans.effectiveLimits(activity.db,System.currentTimeMillis()).length()} 个应用当前有限额。周计划可在分析页查看或停用；与下方长期规则重叠时执行更严格的限额。")
+        }
         Primary("添加应用限额", Modifier.fillMaxWidth()) {
             selectedPackage = ""
             picking = true
@@ -88,7 +95,7 @@ internal fun AppLimitsScreen(activity: ComposeMainActivity, onBack: () -> Unit,
             }
         }
         if (limits.isEmpty()) Panel {
-            Text("尚未设置应用限额", style = MaterialTheme.typography.titleMedium)
+            Text("尚未设置长期限额", style = MaterialTheme.typography.titleMedium)
             Caption("为应用设置每日或每周可用时长，超额后限制打开。")
         }
         limits.forEach { limit ->

@@ -26,6 +26,7 @@ public final class TickReceiver extends BroadcastReceiver {
     long now = System.currentTimeMillis();
     Reminders.deliver(c, db, now);
     Scheduler.schedule(c);
+    FallbackBlockService.sync(c);
     if (Intent.ACTION_BOOT_COMPLETED.equals(action) && db.settings().optBoolean("monitor")) {
       boolean fine =
           c.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)

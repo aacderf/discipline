@@ -275,6 +275,16 @@ public final class Store extends SQLiteOpenHelper {
         if (t.equals("instances") && o.has("manual")
             && (!Double.isFinite(o.optDouble("manual")) || o.optDouble("manual") < 0))
           throw new IllegalArgumentException("备份中的任务进度无效");
+        if (t.equals("state") && o.optString("id").equals("usageWeekPlans")) {
+          JSONArray plans = o.optJSONArray("plans");
+          if (plans == null || plans.length() > 10) throw new IllegalArgumentException("备份中的周使用计划无效");
+          for (int index = 0; index < plans.length(); index++) {
+            JSONObject plan = plans.optJSONObject(index);
+            if (plan == null) throw new IllegalArgumentException("备份中的周使用计划无效");
+            UsageWeekPlans.validatePlan(plan);
+          }
+        }
+        if (t.equals("state") && o.optString("id").equals("usageAnalysisDraft")) UsageWeekPlans.validatePlan(o);
         if (t.equals("places")) {
           if (!Double.isFinite(o.optDouble("lat")) || !Double.isFinite(o.optDouble("lng"))
               || Math.abs(o.optDouble("lat")) > 85 || Math.abs(o.optDouble("lng")) > 180)
