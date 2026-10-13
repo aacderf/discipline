@@ -43,7 +43,9 @@ public final class Engine {
             updateFocus(now);
             generate(now);
             for (JSONObject i : db.all("instances"))
-              if (i.optString("status").equals("open")) {
+              if (i.optString("status").equals("open") ||
+                  (i.optString("status").equals("review") && !i.optString("place").isEmpty() &&
+                   !Rules.locationNeedsReview(i.optString("coveragePolicy"),i.optLong("start"),i.optLong("due")))) {
                 if (i.optLong("due") <= now) settle(i, now);
               }
           });

@@ -112,6 +112,11 @@ class UsagePlanningDeviceTest {
         assertNotNull(engine.blocked("com.android.chrome",now+1000))
         engine.tick(); assertEquals(1,db.all("penalties").size)
         assertEquals(penalty.getLong("start"),db.one("penalties","penalty:long")!!.getLong("start"))
+        val pending=task("old-pending",now,true)
+        Store.set(pending,"status","review"); db.put("instances",pending); engine.tick()
+        assertEquals("failed",db.one("instances","old-pending")!!.getString("status"))
+        assertTrue(db.one("penalties","penalty:old-pending")!!.getLong("end")>System.currentTimeMillis())
+        assertEquals(penalty.getLong("start"),db.one("penalties","penalty:long")!!.getLong("start"))
     }
     @Test fun dailyCoverageStillReviewsAndStaleConfirmationCannotPunishDoneTask() {
         val now=System.currentTimeMillis(); db.put("instances",task("short",now,false)); val engine=Engine(context); engine.tick()
