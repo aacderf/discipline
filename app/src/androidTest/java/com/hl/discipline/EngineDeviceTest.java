@@ -81,6 +81,7 @@ public class EngineDeviceTest {
   public void legacyMissingProgressIsZeroAndMalformedProgressBackupIsRejected() {
     JSONObject legacy = task("legacy-progress", "check");
     legacy.remove("manual"); set(legacy, "due", now + Rules.MINUTE);
+    db.put("plans", copy(legacy));
     db.put("instances", legacy);
     assertNotNull(db.prepareImport(db.exportJson()));
     assertEquals(0, e.progress(legacy, now), 0.0001);
