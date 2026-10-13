@@ -29,7 +29,7 @@ private fun usageTime(millis:Long):String {
     return if(minutes<60) "$minutes 分" else "${minutes/60}小时${minutes%60}分"
 }
 
-@Composable internal fun UsageInsightsScreen(activity:ComposeMainActivity,onBack:()->Unit) {
+@Composable internal fun UsageInsightsScreen(activity:ComposeMainActivity,onBack:()->Unit,onPlan:(Long)->Unit) {
     val revision=activity.revision
     val access=remember(revision) { AppUsageLimits.hasAccess(activity) }
     var reload by remember { mutableIntStateOf(0) }
@@ -43,7 +43,10 @@ private fun usageTime(millis:Long):String {
     var goal by rememberSaveable { mutableStateOf("减少娱乐应用的使用，保留学习和必要沟通。") }
     val draft=remember(revision) { activity.db.one("state","usageAnalysisDraft") }
     var review by remember { mutableStateOf<JSONObject?>(null) }
-    LaunchedEffect(access,reload) {
+    var deletingWeek by remember { mutableLongStateOf(0) }
+    var deletingDraft by remember { mutableStateOf<JSONObject?>(null) }
+    val today=Rules.date(System.currentTimeMillis())
+    LaunchedEffect(access,reload,today) {
         if(!access) { report=null; return@LaunchedEffect }
         loading=true; error=""
         try { report=withContext(Dispatchers.IO) { UsageInsightsRepository.load(activity,System.currentTimeMillis(),reload>0) } }
@@ -53,6 +56,8 @@ private fun usageTime(millis:Long):String {
     }
     var selected by rememberSaveable(report?.start) { mutableStateOf(report?.apps?.filter { it.canLimit }?.take(5)?.joinToString("|"){it.pkg}.orEmpty()) }
     val chosen=selected.split('|').filter { it.isNotEmpty() }.toSet()
+    val selectedApps=report?.apps?.filter {it.canLimit && it.pkg in chosen}.orEmpty()
+    Box(Modifier.fillMaxSize().imePadding()) {
     Screen("应用使用",onBack=onBack) {
         Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
             Text("过去 7 天",Modifier.weight(1f),style=MaterialTheme.typography.titleMedium)
@@ -98,44 +103,66 @@ private fun usageTime(millis:Long):String {
                 if(data.apps.size>10) TextButton(onClick={showAll=!showAll}) { Text(if(showAll) "收起应用列表" else "查看全部 ${data.apps.size} 个应用") }
             }
         } else if(loading) Caption("正在本机整理使用记录…")
-        Section("下周使用计划")
-        Caption("DeepSeek V4.1 · 生成建议后可调整，确认后才启用；原有应用限额保留，重叠时执行更严格的限额。")
-        Input("希望如何安排下一周",goal,{goal=it.take(600)})
-        Secondary(if(keyConfigured) "DeepSeek 已配置 · 管理" else "配置 DeepSeek") { keySettings=true }
-        GlassPrimaryButton(if(activity.dataOperation.isEmpty()) "生成下周建议" else "正在处理…",Modifier.fillMaxWidth(),
-            enabled=data!=null && chosen.isNotEmpty() && keyConfigured && activity.dataOperation.isEmpty()) { sendConfirm=true }
-        if(draft!=null) Panel {
-            Text("上次分析 · ${timeText(draft.optLong("created"))}",style=MaterialTheme.typography.labelLarge)
-            Text(draft.optString("summary"),style=MaterialTheme.typography.bodyMedium)
-            Secondary("查看并调整建议") { review=draft }
-        }
-        UsageWeekPlans.plans(activity.db).filter { it.optLong("end")>System.currentTimeMillis() }.forEach { plan -> Panel {
-            Text("${Rules.date(plan.optLong("start"))}—${Rules.date(plan.optLong("end")-1)}",style=MaterialTheme.typography.titleMedium)
+        Section("使用计划")
+        Secondary("手动安排下周") {onPlan(0)}
+        val weekPlans=UsageWeekPlans.plans(activity.db).filter {it.optLong("end")>System.currentTimeMillis()}
+        if(weekPlans.isEmpty()) Caption("还没有周计划。可手动安排，也可让 AI 根据使用记录给出建议。")
+        weekPlans.forEach { plan -> Panel {
+            val start=plan.optLong("start")
+            val enabled=plan.optBoolean("enabled",true)
+            Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+                Text("${Rules.date(start)}—${Rules.date(plan.optLong("end")-1)}",Modifier.weight(1f),style=MaterialTheme.typography.titleMedium)
+                Switch(enabled,{ value ->activity.act {UsageWeekPlans.setEnabled(activity,start,value,System.currentTimeMillis())} },
+                    modifier=Modifier.semantics {contentDescription="${Rules.date(start)}的使用计划"})
+            }
             Caption("${plan.optJSONArray("apps")?.length()?:0} 个应用 · "+
-                if(!plan.optBoolean("enabled",true)) "已停用" else if(plan.optLong("start")>System.currentTimeMillis()) "等待周一生效" else "本周生效中")
+                if(!enabled) "已停用" else if(start>System.currentTimeMillis()) "等待周一生效" else "本周生效中")
             val apps=plan.optJSONArray("apps")
             for(index in 0 until (apps?.length()?:0)) {
                 val app=apps!!.getJSONObject(index)
                 Caption(app.optString("label")+" · "+listOfNotNull(
-                    app.optInt("dailyMinutes").takeIf { it>0 }?.let { "每日 $it 分钟" },
-                    app.optInt("weeklyMinutes").takeIf { it>0 }?.let { "每周 $it 分钟" }).joinToString(" · "))
+                    app.optInt("dailyMinutes").takeIf {it>0}?.let {"每日 $it 分钟"},
+                    app.optInt("weeklyMinutes").takeIf {it>0}?.let {"每周 $it 分钟"}).joinToString(" · "))
             }
-            if(plan.optBoolean("enabled",true)) TextButton(onClick={activity.act { UsageWeekPlans.disable(activity,plan.optLong("start")) }}) { Text("停用这周计划") }
+            Row(horizontalArrangement=Arrangement.spacedBy(12.dp)) {
+                TextButton(onClick={onPlan(start)}) {Text("调整限额")}
+                TextButton(onClick={deletingWeek=start}) {Text("删除计划")}
+            }
         } }
+        Section("AI 下周建议")
+        Caption("DeepSeek V4.1 · 生成建议后可调整，确认后才启用；原有应用限额保留，重叠时执行更严格的限额。")
+        Input("希望如何安排下一周",goal,{goal=it.take(600)})
+        Secondary(if(keyConfigured) "DeepSeek 已配置 · 管理" else "配置 DeepSeek") { keySettings=true }
+        GlassPrimaryButton(if(activity.dataOperation.isEmpty()) "生成下周建议" else "正在处理…",Modifier.fillMaxWidth(),
+            enabled=data!=null && selectedApps.isNotEmpty() && keyConfigured && activity.dataOperation.isEmpty()) { sendConfirm=true }
+        if(draft!=null) Panel {
+            Text("上次分析 · ${timeText(draft.optLong("created"))}",style=MaterialTheme.typography.labelLarge)
+            Text(draft.optString("summary"),style=MaterialTheme.typography.bodyMedium)
+            if(draft.optLong("start")<=System.currentTimeMillis()) Caption("建议日期已过；可查看内容，启用前需要重新生成。")
+            Secondary("查看并调整建议") { review=draft }
+            TextButton(onClick={deletingDraft=draft},enabled=activity.dataOperation.isEmpty()) {Text("清除建议")}
+        }
+    }
     }
     if(sendConfirm) ConfirmDialog("发送使用摘要给 DeepSeek？",
         "仅发送所选应用名称、每日使用分钟和你的目标，不发送位置、任务或消息内容。使用你自己的 API 账户，按官方计费。建议不会自动执行。",{
         val data=report
         val requestGoal=goal
+        val requestApps=selectedApps
         sendConfirm=false
         if(data!=null) activity.runDataOperation("正在分析使用计划",{
-            val apps=data.apps.filter { it.pkg in chosen }
-            val result=DeepSeekUsageClient().analyze(DeepSeekKeyStore.read(activity),data,apps,requestGoal,System.currentTimeMillis())
+            val result=DeepSeekUsageClient().analyze(DeepSeekKeyStore.read(activity),data,requestApps,requestGoal,System.currentTimeMillis())
             activity.db.put("state",result)
             result
         }) { review=it }
     }) {sendConfirm=false}
     if(keySettings) DeepSeekSettings(activity,onDismiss={keySettings=false;keyConfigured=DeepSeekKeyStore.hasKey(activity)})
+    if(deletingWeek>0) ConfirmDialog("删除这周使用计划？","只取消这份周限额，不删除使用记录；原有长期限额继续保留。",{
+        if(activity.act {UsageWeekPlans.remove(activity,deletingWeek)}) deletingWeek=0
+    }) {deletingWeek=0}
+    deletingDraft?.let { value -> ConfirmDialog("清除这份建议？","已保存的周计划保留。再次生成建议将使用新的 API 请求。",{
+        if(activity.act {UsageWeekPlans.discardDraft(activity,value)}) deletingDraft=null
+    }) {deletingDraft=null} }
     review?.let { value -> UsagePlanReview(activity,value,onDismiss={review=null}) }
 }
 
@@ -193,6 +220,7 @@ private fun usageTime(millis:Long):String {
             }
         }
         Caption("相同日期的已保存周计划将被替换；本周和永久规则不变。没有可用拦截模式时，请先到应用限额检查权限。")
+        if(draft.optLong("start")<=System.currentTimeMillis()) Caption("建议日期已过，请返回重新生成下周建议。")
         if(error.isNotEmpty()) Text(error,color=MaterialTheme.colorScheme.error)
     }},confirmButton={TextButton(onClick={
         val edited=try { JSONArray(original.map { app ->Store.copy(app).apply {
@@ -200,5 +228,5 @@ private fun usageTime(millis:Long):String {
             put("weeklyMinutes",weekly[app.getString("package")]?.toIntOrNull()?:error("请输入每周整数分钟"))
         } }) } catch(e:Exception) {error=e.message?:"限额格式无效";return@TextButton}
         if(activity.act {UsageWeekPlans.save(activity,draft,edited,System.currentTimeMillis())}) {activity.toast("下周计划已保存，周一开始生效");onDismiss()}
-    }) {Text("确认启用")}},dismissButton={TextButton(onClick=onDismiss){Text("返回")}})
+    },enabled=draft.optLong("start")>System.currentTimeMillis() && activity.dataOperation.isEmpty()) {Text("确认启用")}},dismissButton={TextButton(onClick=onDismiss){Text("返回")}})
 }

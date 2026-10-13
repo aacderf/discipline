@@ -71,6 +71,42 @@ class UsagePlanningDeviceTest {
             assertFalse(db.exportJson().contains(sample))
         } finally {DeepSeekKeyStore.clear(context)}
     }
+    @Test fun manualWeekSupportsActiveEditingPauseResumeAndRemoval() {
+        val now=System.currentTimeMillis(); val draft=UsageWeekPlans.manualDraft(now)
+        val settings=db.settings(); Store.set(settings,"appLimits",JSONArray(listOf(Store.obj("package",app().pkg,
+            "enabled",true,"dailyMinutes",120,"weeklyMinutes",500)))); db.put("state",settings)
+        val apps=JSONArray(listOf(Store.obj("package",app().pkg,"label",app().label,"dailyMinutes",60,"weeklyMinutes",360,"enabled",true)))
+        UsageWeekPlans.save(context,draft,apps,now,replaceExisting=false)
+        assertThrows(IllegalArgumentException::class.java) {UsageWeekPlans.save(context,draft,apps,now,replaceExisting=false)}
+        val start=draft.getLong("start"); val original=UsageWeekPlans.plans(db).single()
+        UsageWeekPlans.setEnabled(context,start,false,now)
+        assertThrows(IllegalArgumentException::class.java) {UsageWeekPlans.update(context,original,apps,now)}
+        val paused=UsageWeekPlans.plans(db).single(); val edited=Store.copy(apps.getJSONObject(0)); edited.put("dailyMinutes",30)
+        UsageWeekPlans.update(context,paused,JSONArray(listOf(edited)),start+Rules.MINUTE)
+        assertFalse(UsageWeekPlans.plans(db).single().getBoolean("enabled"))
+        assertEquals(120,UsageWeekPlans.effectiveLimits(db,start).getJSONObject(0).getInt("dailyMinutes"))
+        UsageWeekPlans.setEnabled(context,start,true,start+Rules.MINUTE)
+        assertEquals(30,UsageWeekPlans.effectiveLimits(db,start).getJSONObject(0).getInt("dailyMinutes"))
+        assertNotNull(db.prepareImport(db.exportJson()))
+        val current=UsageWeekPlans.plans(db).single()
+        UsageWeekPlans.remove(context,start)
+        assertEquals(120,UsageWeekPlans.effectiveLimits(db,start).getJSONObject(0).getInt("dailyMinutes"))
+        assertThrows(IllegalStateException::class.java) {UsageWeekPlans.update(context,current,apps,now)}
+        assertTrue(UsageWeekPlans.plans(db).isEmpty())
+    }
+    @Test fun acceptedDraftIsClearedWithoutDeletingANewerSuggestion() {
+        val now=System.currentTimeMillis(); val draft=UsageWeekPlans.parseRecommendation(content(),listOf(app()),report(now),now)
+        db.put("state",draft); UsageWeekPlans.save(context,draft,draft.getJSONArray("apps"),now)
+        assertNull(db.one("state","usageAnalysisDraft"))
+        val newer=Store.copy(draft); newer.put("summary","新的建议"); db.put("state",newer)
+        UsageWeekPlans.save(context,draft,draft.getJSONArray("apps"),now)
+        assertEquals("新的建议",db.one("state","usageAnalysisDraft")!!.getString("summary"))
+        assertThrows(IllegalArgumentException::class.java) {UsageWeekPlans.discardDraft(context,draft)}
+        UsageWeekPlans.discardDraft(context,newer)
+        assertNull(db.one("state","usageAnalysisDraft")); assertEquals(1,UsageWeekPlans.plans(db).size)
+        val end=draft.getLong("end")
+        assertThrows(IllegalArgumentException::class.java) {UsageWeekPlans.setEnabled(context,draft.getLong("start"),true,end)}
+    }
     @Test fun batchQuotaReadsShareQueriesAndSwitchesStillReadFresh() {
         val device=UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
         device.executeShellCommand("appops set ${context.packageName} GET_USAGE_STATS allow")
