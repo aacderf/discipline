@@ -24,7 +24,9 @@ internal object UsageInsightsRepository {
         val manager=context.getSystemService(UsageStatsManager::class.java)
         val stats=manager.queryUsageStats(UsageStatsManager.INTERVAL_DAILY,bounds[0],now)
             ?: error("系统暂未提供使用汇总，请稍后刷新")
-        val nativeEvents=manager.queryEvents(bounds[0]-24*60*Rules.MINUTE,now)
+        // Historical dates use persisted daily totals. Recent events only supplement today,
+        // so truncated histories cannot stretch an unmatched resume across several days.
+        val nativeEvents=manager.queryEvents(bounds[6]-60*Rules.MINUTE,now)
             ?: error("系统暂未提供使用记录，请稍后刷新")
         val points=AppUsageLimits.points(nativeEvents)
         val events=UsageTimeline.calculate(points,bounds,now)
@@ -36,7 +38,9 @@ internal object UsageInsightsRepository {
         }
         events.forEach { (pkg,totals) ->
             val days=daily.getOrPut(pkg){LongArray(7)}
-            days.indices.forEach { day->days[day]=maxOf(days[day],totals.millis[day]); if(totals.millis[day]>0) available[day]=true }
+            val today=days.lastIndex
+            days[today]=maxOf(days[today],totals.millis[today])
+            if(totals.millis[today]>0) available[today]=true
         }
         val packages=context.packageManager
         val apps=daily.mapNotNull { (pkg,values) ->

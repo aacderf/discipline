@@ -25,6 +25,16 @@ public class UsageTimelineTest {
     UsageTimeline.Totals t=UsageTimeline.calculate(Arrays.asList(point(110,"A",1),point(140,"A",2),point(160,"A",3)),new long[]{100,200},190).get("app");
     assertEquals(30,t.millis[0]);
   }
+  @Test public void startupDiscardsAnUnclosedIntervalBeforeRestart() {
+    UsageTimeline.Totals t=UsageTimeline.calculate(Arrays.asList(point(110,"A",1),point(170,"",5),
+        point(180,"A",1),point(190,"A",2)),new long[]{100,200},200).get("app");
+    assertEquals(10,t.millis[0]);
+  }
+  @Test public void shutdownClosesUseAndOfflineTimeNeverAccumulates() {
+    UsageTimeline.Totals t=UsageTimeline.calculate(Arrays.asList(point(110,"A",1),point(140,"",4),
+        point(280,"",5),point(290,"A",1)),new long[]{100,200,300},300).get("app");
+    assertArrayEquals(new long[]{30,10},t.millis);
+  }
   @Test public void stricterQuotaIgnoresAnUnsetLimit() {
     assertEquals(30,UsageTimeline.lowerPositive(0,30)); assertEquals(20,UsageTimeline.lowerPositive(20,30));
     assertEquals(20,UsageTimeline.lowerPositive(20,0));

@@ -84,6 +84,21 @@ class UsagePlanningDeviceTest {
             assertEquals(2,AppUsageLimits.debugFreshQueries.get()-before)
         } finally {device.executeShellCommand("appops set ${context.packageName} GET_USAGE_STATS default")}
     }
+    @Test fun reportHistoryUsesPersistedTotalsInsteadOfUnclosedEvents() {
+        val device=UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
+        device.executeShellCommand("appops set ${context.packageName} GET_USAGE_STATS allow")
+        try {
+            val now=System.currentTimeMillis()
+            val report=UsageInsightsRepository.load(context,now,true)
+            val stats=context.getSystemService(android.app.usage.UsageStatsManager::class.java)
+                .queryUsageStats(android.app.usage.UsageStatsManager.INTERVAL_DAILY,report.start,now)
+            for(app in report.apps) for(day in 0..5) {
+                val persisted=stats.filter {it.packageName==app.pkg && Rules.date(it.firstTimeStamp)==report.dates[day]}
+                    .sumOf {it.totalTimeInForeground.coerceAtLeast(0)}.coerceAtMost(24*60*Rules.MINUTE)
+                assertEquals("Historical time for ${app.pkg}",persisted,app.days[day])
+            }
+        } finally {device.executeShellCommand("appops set ${context.packageName} GET_USAGE_STATS default")}
+    }
     private fun task(id:String,now:Long,longTask:Boolean)=Store.obj("id",id,"planId",id,"name","长任务测试",
         "cycle","once","metric","presence","manual",0,"target",120,"place","library",
         "start",now-(if(longTask) 3*24*60 else 120)*Rules.MINUTE,"due",now-30*Rules.MINUTE,

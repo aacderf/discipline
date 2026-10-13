@@ -163,6 +163,8 @@ public final class AppUsageLimits {
       else if(event.getEventType()==UsageEvents.Event.ACTIVITY_PAUSED) kind=UsageTimeline.PAUSE;
       else if(event.getEventType()==UsageEvents.Event.ACTIVITY_STOPPED) kind=UsageTimeline.STOP;
       else if(event.getEventType()==UsageEvents.Event.SCREEN_NON_INTERACTIVE || event.getEventType()==UsageEvents.Event.KEYGUARD_SHOWN) kind=UsageTimeline.SCREEN_OFF;
+      else if(Build.VERSION.SDK_INT>=29 && event.getEventType()==UsageEvents.Event.DEVICE_SHUTDOWN) kind=UsageTimeline.SCREEN_OFF;
+      else if(Build.VERSION.SDK_INT>=29 && event.getEventType()==UsageEvents.Event.DEVICE_STARTUP) kind=UsageTimeline.STARTUP;
       if(kind!=0) points.add(new UsageTimeline.Point(event.getTimeStamp(),event.getPackageName(),event.getClassName(),kind));
     }
     return points;

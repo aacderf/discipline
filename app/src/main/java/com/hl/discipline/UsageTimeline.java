@@ -4,7 +4,7 @@ import java.util.*;
 
 /** Interval clipping shared by the local report and quota reads. No Android dependencies. */
 public final class UsageTimeline {
-  public static final int RESUME=1, PAUSE=2, STOP=3, SCREEN_OFF=4;
+  public static final int RESUME=1, PAUSE=2, STOP=3, SCREEN_OFF=4, STARTUP=5;
   public static final class Point {
     public final long at; public final String pkg, activity; public final int kind;
     public Point(long at,String pkg,String activity,int kind) {
@@ -24,6 +24,8 @@ public final class UsageTimeline {
     Map<String,Totals> result=new HashMap<>(); Map<String,Active> active=new HashMap<>();
     for(Point point:points) {
       if(point.at>until) continue;
+      // No closing timestamp survives an abrupt restart; do not invent elapsed use.
+      if(point.kind==STARTUP) { active.clear(); continue; }
       if(point.kind==SCREEN_OFF) {
         for(Map.Entry<String,Active> entry:active.entrySet()) add(result,entry.getKey(),entry.getValue().start,point.at,boundaries,until);
         active.clear(); continue;
