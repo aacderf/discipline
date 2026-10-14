@@ -654,8 +654,9 @@ private fun MainScreen(activity: ComposeMainActivity, nav: NavHostController) {
         derivedStateOf { if (tab == "timetable") timetableLifted else activeScroll.value > liftPx }
     }
     val tabStates = rememberSaveableStateHolder()
-    var createPlanBounds by remember { mutableStateOf(Rect.Zero) }
-    CompositionLocalProvider(LocalCreatePlanBounds provides if (tab == "today") createPlanBounds else Rect.Zero) {
+    val createPlanBounds = remember { mutableStateOf(Rect.Zero) }
+    // Position changes during press/transition are layout data, not a new screen state.
+    CompositionLocalProvider(LocalCreatePlanBounds provides if (tab == "today") createPlanBounds else null) {
     ScreenExitGuard(leaving) {
     Scaffold(
         topBar = {
@@ -765,7 +766,7 @@ private fun MainScreen(activity: ComposeMainActivity, nav: NavHostController) {
             }
         }, floatingActionButton = {
             if (tab == "today") CreatePlanAction(Modifier.onGloballyPositioned {
-                createPlanBounds = it.boundsInWindow()
+                createPlanBounds.value = it.boundsInWindow()
             }) { nav.navigate("form/new") }
         }, containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets(0, 0, 0, 0)
@@ -807,7 +808,7 @@ private fun MainScreen(activity: ComposeMainActivity, nav: NavHostController) {
 
 }
 
-private val LocalCreatePlanBounds = staticCompositionLocalOf { Rect.Zero }
+private val LocalCreatePlanBounds = compositionLocalOf<State<Rect>?> { null }
 
 private data class HomeHero(val key: String, val task: JSONObject?, val done: Int)
 
@@ -1179,8 +1180,14 @@ internal fun TaskCard(activity: ComposeMainActivity, nav: NavHostController, tas
     val taskTransitionId = LocalTaskTransitionId.current
     var locallyCompleted by remember(visual.id) { mutableStateOf(false) }
     var open by rememberSaveable(visual.id) { mutableStateOf(featured) }
-    var avoidFab by remember(visual.id) { mutableStateOf(false) }
+    val headerBounds = remember(visual.id) { mutableStateOf(Rect.Zero) }
     val fabBounds = LocalCreatePlanBounds.current
+    val avoidFab by remember(fabBounds, headerBounds, open, featured) {
+        derivedStateOf {
+            val bounds = fabBounds?.value ?: Rect.Zero
+            !open && !featured && bounds != Rect.Zero && headerBounds.value.overlaps(bounds)
+        }
+    }
     val shared = richMotionEnabled() && taskTransitionId?.value == visual.id
     fun openDetail() {
         taskTransitionId?.value = visual.id
@@ -1195,7 +1202,7 @@ internal fun TaskCard(activity: ComposeMainActivity, nav: NavHostController, tas
     val content: @Composable ColumnScope.() -> Unit = {
         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
             .onGloballyPositioned { coordinates ->
-                avoidFab = !open && !featured && fabBounds != Rect.Zero && coordinates.boundsInWindow().overlaps(fabBounds)
+                headerBounds.value = coordinates.boundsInWindow()
             }.padding(end = if (avoidFab) 72.dp else 0.dp)
             .quietClickable(if (open) "查看${visual.name}详情" else "展开${visual.name}") {
                 if (open) openDetail() else open = true

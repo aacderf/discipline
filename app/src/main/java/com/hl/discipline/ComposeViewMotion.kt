@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
@@ -48,7 +49,7 @@ internal fun <S> AnimatedContentTransitionScope<S>.staggeredTextTransform(motion
         slideInVertically(tween(enterDuration, delayMillis = enterDelay, easing = AppMotion.easing)) { it / 6 }) togetherWith
         (fadeOut(tween(exitDuration, easing = FastOutLinearInEasing)) +
             slideOutVertically(tween(exitDuration, easing = FastOutLinearInEasing)) { -it / 6 }) using
-        SizeTransform { _, _ -> tween(if (motion) 240 else 0, easing = AppMotion.easing) }
+        null
 }
 
 @OptIn(ExperimentalSharedTransitionApi::class)
@@ -100,7 +101,7 @@ internal fun Modifier.quietClickable(
     val fill by animateColorAsState(if (pressed) tint.copy(alpha = .09f) else Color.Transparent,
         tween(if (motion) AppMotion.pressIn else 0), label = "局部触摸底色")
     return this.graphicsLayer { scaleX = scale; scaleY = scale }
-        .clip(shape).background(fill)
+        .clip(shape).drawBehind { drawRect(fill) }
         .drawWithContent {
             drawContent()
             if (focused) drawRoundRect(tint.copy(alpha = .65f),

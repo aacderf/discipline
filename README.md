@@ -2,7 +2,7 @@
 
 [![Android build](https://github.com/aacderf/discipline/actions/workflows/android.yml/badge.svg)](https://github.com/aacderf/discipline/actions/workflows/android.yml)
 
-Android 本地自律工具，基于 Kotlin / Java 与 Jetpack Compose。本仓库公开 0.12.2 的完整 App 源码、测试、资源与构建流程。
+Android 本地自律工具，基于 Kotlin / Java 与 Jetpack Compose。本仓库公开 0.12.3 的完整 App 源码、测试、资源与构建流程。
 
 ## 功能
 
@@ -15,6 +15,13 @@ Android 本地自律工具，基于 Kotlin / Java 与 Jetpack Compose。本仓�
 - 本机近七天应用使用分析、可选 DeepSeek V4.1 建议，以及经用户确认后生效的下周应用限额。
 
 公开版使用合成课表示例，不包含个人课表、定位记录、备份、截图、地图 Key 或原始签名。示例学期固定为 2026-08-31 起 18 周；当前课表结构仍按这个学期校验，这是已知限制。
+
+## 0.12.3 更新
+
+- 内置中文字体改为未压缩资源，避免第一次显示文字时在主线程解压完整字体，保留原有字体和数字排版。
+- 加号避让只在实际重叠状态变化时更新卡片，不再用位置数值刷新整个页面。
+- 按压尺度、高度、底色和顶栏颜色在绘制层更新；标题保留错峰换字，取消额外宽高动画；悬浮面板仅在可访问状态改变时更新无障碍树。
+- 保留既有 UI、testTag、语义、减少动画分支和全部业务规则。测量、相关测试及真机边界见 [0.12.3 验证记录](docs/validation-0.12.3.md)。
 
 ## 0.12.2 更新
 

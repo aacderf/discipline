@@ -30,7 +30,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -55,15 +55,15 @@ internal enum class GlassButtonState { Idle, Loading, Success }
 internal enum class GlassSecondaryTone { Neutral, Destructive }
 
 @Composable
-private fun pressDepth(pressed: Boolean, raised: Dp): Pair<Float, Dp> {
+private fun pressDepth(pressed: Boolean, raised: Dp): Pair<State<Float>, State<Dp>> {
     val motion = LocalMotionEnabled.current
     val richMotion = richMotionEnabled()
     val transition = updateTransition(pressed, label = "按钮统一按压")
-    val scale by transition.animateFloat(transitionSpec = {
+    val scale = transition.animateFloat(transitionSpec = {
         if (!motion) snap() else if (targetState) tween(AppMotion.pressIn, easing = AppMotion.easing)
         else spring(dampingRatio = AppMotion.pressSpringDamping, stiffness = AppMotion.pressSpringStiffness)
     }, label = "尺度") { if (it && motion) AppMotion.pressScale else 1f }
-    val elevation by transition.animateDp(transitionSpec = {
+    val elevation = transition.animateDp(transitionSpec = {
         if (!richMotion) snap() else if (targetState) tween(AppMotion.pressIn, easing = AppMotion.easing)
         else spring(dampingRatio = AppMotion.pressSpringDamping, stiffness = AppMotion.pressSpringStiffness)
     }, label = "高度") { if (it && richMotion) AppElevation.pressed else raised }
@@ -82,7 +82,7 @@ internal fun CreatePlanAction(modifier: Modifier = Modifier, onClick: () -> Unit
         else listOf(palette.primaryTop, palette.primaryBottom))
     val shape = AppShapes.material.large
     Box(modifier.size(56.dp).testTag("create-plan-fab")
-        .graphicsLayer { scaleX = scale; scaleY = scale }.clip(shape)
+        .graphicsLayer { scaleX = scale.value; scaleY = scale.value }.clip(shape)
         .background(fill, shape)
         .border(1.dp, if (focused) MaterialTheme.colorScheme.primary else palette.primaryBottom, shape)
         .clickable(interactionSource = interaction, indication = null, role = Role.Button,
@@ -136,9 +136,13 @@ internal fun GlassPrimaryButton(
         enabled = active,
         interactionSource = interaction,
         modifier = modifier.widthIn(min = AppButtonSize.primaryMinWidth)
-            .heightIn(min = AppButtonSize.primaryHeight).graphicsLayer(scaleX = scale, scaleY = scale)
-            .shadow(elevation, shape, ambientColor = palette.primaryBorder.copy(alpha = .16f),
-                spotColor = palette.primaryBorder.copy(alpha = .22f))
+            .heightIn(min = AppButtonSize.primaryHeight).graphicsLayer {
+                scaleX = scale.value; scaleY = scale.value
+                shadowElevation = elevation.value.toPx()
+                this.shape = shape
+                ambientShadowColor = palette.primaryBorder.copy(alpha = .16f)
+                spotShadowColor = palette.primaryBorder.copy(alpha = .22f)
+            }
             .background(Brush.verticalGradient(listOf(top, bottom)), shape)
             .drawWithContent {
                 drawContent()
@@ -290,7 +294,8 @@ private fun SecondaryButtonBody(
     else if (glass) palette.glassButtonBorder else palette.secondaryBorder
     CompositionLocalProvider(LocalRippleConfiguration provides null) {
     OutlinedButton(onClick = onClick, enabled = enabled, interactionSource = interaction,
-        modifier = modifier.heightIn(min = AppButtonSize.secondaryHeight).graphicsLayer(scaleX = scale, scaleY = scale)
+        modifier = modifier.heightIn(min = AppButtonSize.secondaryHeight)
+            .graphicsLayer { scaleX = scale.value; scaleY = scale.value }
             .background(fill, shape).drawWithContent {
                 drawContent()
                 if (size.width > 36.dp.toPx()) drawLine(palette.secondaryHighlight,
@@ -331,8 +336,9 @@ internal fun GlassIconButton(
         else if (enabled) palette.glassButtonFill else palette.secondaryDisabled,
         tween(if (LocalMotionEnabled.current) AppMotion.pressIn else 0, easing = AppMotion.easing),
         label = "图标薄荷反馈")
-    Box(modifier = modifier.size(AppButtonSize.iconTarget).graphicsLayer(scaleX = scale, scaleY = scale)
-            .clip(shape).background(fill, shape)
+    Box(modifier = modifier.size(AppButtonSize.iconTarget)
+            .graphicsLayer { scaleX = scale.value; scaleY = scale.value }
+            .clip(shape).drawBehind { drawRect(fill) }
             .border(1.dp, if (focused) MaterialTheme.colorScheme.primary else palette.iconBorder, shape)
             .clickable(enabled = enabled, interactionSource = interaction, indication = null,
                 role = Role.Button, onClickLabel = description, onClick = onClick)
@@ -363,7 +369,8 @@ internal fun GlassPillButton(label: String, selected: Boolean, modifier: Modifie
         selected -> MaterialTheme.colorScheme.onSecondaryContainer
         else -> MaterialTheme.colorScheme.onSurface
     }
-    Box(modifier.heightIn(min = AppButtonSize.pillTarget).graphicsLayer(scaleX = scale, scaleY = scale)
+    Box(modifier.heightIn(min = AppButtonSize.pillTarget)
+        .graphicsLayer { scaleX = scale.value; scaleY = scale.value }
         .clip(AppShapes.pill)
         .then(if (focused) Modifier.border(1.dp, MaterialTheme.colorScheme.primary, AppShapes.pill) else Modifier)
         .clickable(enabled = enabled, interactionSource = interaction, indication = null, role = Role.Button, onClick = onClick)

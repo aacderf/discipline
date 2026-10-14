@@ -26,8 +26,9 @@ internal class CompanionRevealLayout(context: Context) : FrameLayout(context) {
     init { alpha = 0f; clipChildren = true; clipToPadding = true; updateAccessibilityVisibility() }
 
     private fun updateAccessibilityVisibility() {
-        importantForAccessibility = if (acceptsInput && reveal > 0f) IMPORTANT_FOR_ACCESSIBILITY_AUTO
+        val visibility = if (acceptsInput && reveal > 0f) IMPORTANT_FOR_ACCESSIBILITY_AUTO
             else IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+        if (importantForAccessibility != visibility) importantForAccessibility = visibility
     }
 
     private fun updateMask() {

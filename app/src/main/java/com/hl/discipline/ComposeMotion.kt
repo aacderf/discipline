@@ -138,7 +138,8 @@ internal fun ScrollChrome(lifted: Boolean, content: @Composable () -> Unit) {
     val edge by animateColorAsState(
         if (lifted) scheme.outline.copy(alpha = .65f) else Color.Transparent,
         tween(if (motion) AppMotion.scrollBar else 0, easing = AppMotion.easing), label = "顶部栏边界")
-    Box(Modifier.fillMaxWidth().background(fill).drawBehind {
+    Box(Modifier.fillMaxWidth().drawBehind {
+        drawRect(fill)
         drawLine(edge, Offset(0f, size.height - 1.dp.toPx()),
             Offset(size.width, size.height - 1.dp.toPx()), strokeWidth = 1.dp.toPx())
     }) { content() }
