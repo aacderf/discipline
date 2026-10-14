@@ -932,7 +932,7 @@ private fun TodayContent(activity: ComposeMainActivity, nav: NavHostController, 
             else Modifier)
         .animateContentSize(tween(if (activity.motionEnabled) AppMotion.expand else 0, easing = AppMotion.easing))
     // Keep the material and boundary outside the changing content: one continuous shell.
-    GlassTaskPanel(shell) {
+    GlassTaskPanel(shell, compact = hero.task != null) {
         AnimatedContent(targetState = hero, contentKey = { it.key }, label = "首页主任务",
             transitionSpec = {
                 val travel = if (activity.motionEnabled) AppMotion.expand else 0
@@ -967,9 +967,12 @@ private fun TodayContent(activity: ComposeMainActivity, nav: NavHostController, 
     if (tasks.isNotEmpty()) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically) {
-            Text("今日进度", style = MaterialTheme.typography.titleMedium)
-            Text("$done / ${tasks.size}", fontSize = 19.sp, fontWeight = FontWeight.Bold,
-                style = AppTypography.number)
+            Text("接下来", style = MaterialTheme.typography.titleMedium)
+            MetaPill {
+                Text("已完成", Modifier.alignByBaseline())
+                MetricValueText(amountMetricParts("$done / ${tasks.size}"),
+                    Modifier.alignByBaseline(), fontSize = 16.sp, unitSize = 12.sp)
+            }
         }
         ProgressTrack(done.toFloat() / tasks.size, "今日完成 $done 项，共 ${tasks.size} 项", Modifier.fillMaxWidth()
             .onGloballyPositioned {
@@ -990,7 +993,6 @@ private fun TodayContent(activity: ComposeMainActivity, nav: NavHostController, 
     }
     if (tasks.isNotEmpty()) {
         val remaining = active.filter { it !== next }
-        if (remaining.isNotEmpty()) Section("接下来")
         remaining.forEach { task ->
             key(task.optString("id")) { TaskCard(activity, nav, task, false) }
         }
@@ -1096,8 +1098,8 @@ private fun WeeklyPlansScreen(activity: ComposeMainActivity, nav: NavHostControl
             Caption("${monday.format(java.time.format.DateTimeFormatter.ofPattern("M月d日", Locale.CHINA))}—" +
                 monday.plusDays(6).format(java.time.format.DateTimeFormatter.ofPattern("M月d日", Locale.CHINA)))
         }
-        if (allWeekTasks.isNotEmpty()) Text("${allWeekTasks.count { activity.done(it) }} / ${allWeekTasks.size}",
-            style = AppTypography.number.copy(fontSize = 20.sp, fontWeight = FontWeight.SemiBold))
+        if (allWeekTasks.isNotEmpty()) MetricValueText(
+            amountMetricParts("${allWeekTasks.count { activity.done(it) }} / ${allWeekTasks.size}"), fontSize = 20.sp)
     }
     if (allWeekTasks.isNotEmpty()) ProgressTrack(
         allWeekTasks.count { activity.done(it) }.toFloat() / allWeekTasks.size,
@@ -1212,10 +1214,10 @@ internal fun TaskCard(activity: ComposeMainActivity, nav: NavHostController, tas
                     onGlyphPosition?.invoke(coordinates.positionInRoot() + Offset(
                         coordinates.size.width / 2f, coordinates.size.height / 2f))
                 },
-                if (featured) 56.dp else 42.dp, activity.done(task) || locallyCompleted)
+                if (featured) 44.dp else 42.dp, activity.done(task) || locallyCompleted)
             Text(visual.name, Modifier.weight(1f).taskShared("title-${visual.id}", shared, bounds = true),
                 style = MaterialTheme.typography.titleMedium,
-                fontSize = if (featured) 20.sp else 17.sp,
+                fontSize = if (featured) 18.sp else 17.sp,
                 fontWeight = if (featured) FontWeight.Bold else FontWeight.SemiBold,
                 textDecoration = if (activity.done(task) || locallyCompleted) androidx.compose.ui.text.style.TextDecoration.LineThrough
                     else null)
@@ -1239,18 +1241,28 @@ internal fun TaskCard(activity: ComposeMainActivity, nav: NavHostController, tas
             fadeIn(tween(if (activity.motionEnabled) AppMotion.contentEnter else 0, easing = AppMotion.easing)) togetherWith
                 fadeOut(tween(if (activity.motionEnabled) AppMotion.contentExit else 0, easing = AppMotion.easing))
         }) { shown ->
-            Text("${shown.first} · ${shown.second}",
-                Modifier.taskShared("status-${visual.id}", shared, bounds = true)
-                    .semantics { if (shown != summary) hideFromAccessibility() },
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(Modifier.fillMaxWidth().taskShared("status-${visual.id}", shared, bounds = true)
+                .semantics { if (shown != summary) hideFromAccessibility() },
+                horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text(shown.first, style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                MetricValueText(amountMetricParts(shown.second), fontSize = if (featured) 18.sp else 16.sp)
+            }
         }
         val target = task.optDouble("target", 1.0).coerceAtLeast(.001)
         val actualProgress = (activity.engine.progress(task, System.currentTimeMillis()) / target)
             .toFloat().coerceIn(0f, 1f)
+        val metadata: @Composable () -> Unit = {
+            FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                MetaPill("截止 ${timeText(task.optLong("due"))}")
+                MetaPill(if (task.optInt("from") == 0 && task.optInt("until", 1440) == 1440) "全天有效"
+                    else "${clockText(task.optInt("from"))}—${clockText(task.optInt("until", 1440))} 有效")
+            }
+        }
         if (featured) {
-            Caption("截止 ${timeText(task.optLong("due"))}")
             ProgressTrack(actualProgress, "${visual.name}完成进度")
+            metadata()
         }
         val taskAction: @Composable () -> Unit = {
             if (!activity.engine.hasChildren(task)) when (visual.action) {
@@ -1281,10 +1293,9 @@ internal fun TaskCard(activity: ComposeMainActivity, nav: NavHostController, tas
             Column(Modifier.then(if (featured) Modifier.taskTransitionAccessory(shared) else Modifier),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (!featured) {
-                    Caption("截止 ${timeText(task.optLong("due"))}")
                     ProgressTrack(actualProgress, "${visual.name}完成进度")
+                    metadata()
                 }
-                Caption("有效时段 ${clockText(task.optInt("from"))}—${clockText(task.optInt("until", 1440))}")
                 if (activity.done(task) && !featured) {
                     TextButton(onClick = { (onDismissToday ?: { activity.dismissToday(task, true) })() },
                         modifier = Modifier.heightIn(min = 48.dp)) { Text("从日常列表移除") }
@@ -1295,8 +1306,8 @@ internal fun TaskCard(activity: ComposeMainActivity, nav: NavHostController, tas
         }
         if (featured) taskAction()
     }
-    if (embedded) Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp), content = content)
-    else if (featured) GlassTaskPanel(modifier, content) else Panel(modifier, content)
+    if (embedded) Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp), content = content)
+    else if (featured) GlassTaskPanel(modifier, compact = true, content = content) else Panel(modifier, content)
 }
 
 @Composable
@@ -1415,12 +1426,21 @@ private fun PlansScreen(activity: ComposeMainActivity, nav: NavHostController) {
                 }
                 DisclosureMark(expanded)
             }
-            Caption("目标 ${numberText(plan.optDouble("target"))}${activity.unit(plan)} · ${cycleText(plan.optString("cycle"))}")
-            if (placeName != null) Caption("地点 · $placeName")
+            FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                MetaPill("目标 ${numberText(plan.optDouble("target"))}${activity.unit(plan)} · ${cycleText(plan.optString("cycle"))}")
+                if (placeName != null) MetaPill("地点 · $placeName")
+                if (current == null) MetaPill(if (plan.optBoolean("archived")) "已停止重复" else "暂无待执行")
+            }
             if (current != null) {
-                Caption("当前 ${activity.amount(current)} · 截止 ${timeText(current.optLong("due"))}")
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Caption(activity.status(current))
+                    MetricValueText(amountMetricParts(activity.amount(current)), fontSize = 16.sp)
+                }
                 ProgressTrack(progress, "${plan.optString("name")}完成进度")
-            } else Caption(if (plan.optBoolean("archived")) "已停止后续重复" else "当前没有待执行任务")
+                MetaPill("截止 ${timeText(current.optLong("due"))}")
+            }
             AnimatedVisibility(expanded,
                 enter = expandVertically(tween(if (activity.motionEnabled) AppMotion.expand else 0, easing = AppMotion.easing)) +
                     fadeIn(tween(if (activity.motionEnabled) AppMotion.state else 0, easing = AppMotion.easing)),

@@ -143,13 +143,19 @@ internal fun FocusScreen(activity: ComposeMainActivity, nav: NavHostController, 
                 verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs),
                     verticalAlignment = Alignment.CenterVertically) {
-                     if (focus == null) Row(Modifier.weight(1f).heightIn(min = 48.dp)
-                         .testTag("focus-task-selector").quietClickable("选择关联任务") { taskPicker = true },
+                     val taskControl = Modifier.weight(1f).heightIn(min = 48.dp)
+                         .clip(androidx.compose.foundation.shape.RoundedCornerShape(14.dp))
+                         .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = .5f))
+                     Row((if (focus == null) taskControl.testTag("focus-task-selector")
+                         .quietClickable("选择关联任务") { taskPicker = true } else taskControl)
+                         .padding(horizontal = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp),
                          verticalAlignment = Alignment.CenterVertically) {
-                         Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium,
-                             maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                         DisclosureMark(taskPicker)
-                     } else Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                         Icon(painterResource(R.drawable.ic_target), contentDescription = null,
+                             modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                         Text(title, Modifier.weight(1f), style = MaterialTheme.typography.labelLarge,
+                             maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                         if (focus == null) DisclosureMark(taskPicker)
+                     }
                     Row(Modifier.heightIn(min = 48.dp).testTag("focus-app-limits")
                         .quietClickable("管理每日与每周应用限额") { nav.navigate("app-limits") }
                         .padding(horizontal = AppSpacing.xs).semantics {
@@ -161,7 +167,7 @@ internal fun FocusScreen(activity: ComposeMainActivity, nav: NavHostController, 
                         Text(" ›", Modifier.clearAndSetSemantics { }, color = MaterialTheme.colorScheme.primary)
                     }
                 }
-                if (location != null) Caption("地点 · $location")
+                if (location != null) MetaPill("地点 · $location")
                 val forwardWork = focus?.optBoolean("forward") == true &&
                     (phase == "work" || (phase == "paused" && focus.optString("pausedPhase") != "break"))
                 val time = if (focus == null) (minutes.toLongOrNull() ?: 0) * Rules.MINUTE else
@@ -215,8 +221,6 @@ internal fun FocusScreen(activity: ComposeMainActivity, nav: NavHostController, 
                             fontSize = if (compactWindow && largeType) 36.sp else if (compact) 48.sp else 54.sp, maxLines = 1, softWrap = false,
                             fontWeight = FontWeight.Bold, style = AppTypography.number,
                             color = MaterialTheme.colorScheme.onSurface)
-                        Text("本轮进度 ${(fraction * 100).toInt()}%", color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 13.sp, style = MaterialTheme.typography.labelMedium)
                     }
                     if (compactWindow) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
@@ -232,16 +236,81 @@ internal fun FocusScreen(activity: ComposeMainActivity, nav: NavHostController, 
                         timeReadout()
                     }
                     val expected = when {
-                        focus == null -> "开始后显示预计结束时间"
+                        focus == null -> "预计 ${SimpleDateFormat("HH:mm", Locale.CHINA).format(Date(System.currentTimeMillis() + time))} 结束"
                         phase == "ready" -> "开始后显示预计结束时间"
                         forwardWork -> "由你决定结束时间"
                         phase == "paused" -> "继续后更新预计结束时间"
                         else -> "预计 ${SimpleDateFormat("HH:mm", Locale.CHINA).format(Date(System.currentTimeMillis() + time))} 结束"
                     }
-                    Box(Modifier.fillMaxWidth().height(24.dp)) {
-                        Text(expected, style = MaterialTheme.typography.labelMedium,
+                    Row(Modifier.fillMaxWidth().height(32.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(expected, Modifier.weight(1f), style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1,
                             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                        Text("本轮进度 ${(fraction * 100).toInt()}%", fontSize = 12.sp,
+                            style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    if (focus == null) {
+                        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("focus-preferences")
+                            .quietClickable(if (preferencesOpen) "收起本次配置" else "调整本次配置") {
+                                preferencesOpen = !preferencesOpen
+                            }, verticalAlignment = Alignment.CenterVertically) {
+                            Text("专注 ${activity.focusMinutes}分 · 休息 ${activity.focusShortBreak}分",
+                                Modifier.weight(1f), style = MaterialTheme.typography.labelLarge,
+                                maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                            DisclosureMark(preferencesOpen)
+                        }
+                        FormDisclosure(preferencesOpen) {
+                            Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    listOf("25/5", "50/10", "自定义").forEach { preset ->
+                                        FilterChip(selected = activity.focusPreset == preset, onClick = {
+                                            activity.focusPreset = preset
+                                            when (preset) {
+                                                "25/5" -> { activity.focusMinutes = "25"; activity.focusShortBreak = "5"; activity.focusLongBreak = "15" }
+                                                "50/10" -> { activity.focusMinutes = "50"; activity.focusShortBreak = "10"; activity.focusLongBreak = "20" }
+                                            }
+                                        }, label = { Text(preset) }, modifier = Modifier.heightIn(min = 48.dp))
+                                    }
+                                }
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    verticalAlignment = Alignment.Bottom) {
+                                    Box(Modifier.weight(1f)) {
+                                        SelectField("关联任务", listOf("自由专注") + tasks.map { it.optString("name") },
+                                            (tasks.indexOfFirst { it.optString("id") == taskId } + 1).coerceAtLeast(0)) {
+                                            activity.selectFocusTask(if (it == 0) "" else tasks[it - 1].optString("id"))
+                                        }
+                                    }
+                                    Input("分钟", minutes, { activity.focusMinutes = it; activity.focusPreset = "自定义" }, Modifier.weight(1f),
+                                        keyboard = androidx.compose.ui.text.input.KeyboardType.Number)
+                                }
+                                if (activity.focusPreset == "自定义" || activity.focusPreset == "custom") {
+                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Input("短休息", activity.focusShortBreak, { activity.focusShortBreak = it }, Modifier.weight(1f),
+                                            keyboard = androidx.compose.ui.text.input.KeyboardType.Number)
+                                        Input("长休息", activity.focusLongBreak, { activity.focusLongBreak = it }, Modifier.weight(1f),
+                                            keyboard = androidx.compose.ui.text.input.KeyboardType.Number)
+                                    }
+                                }
+                                Input("每组轮次", activity.focusCycles, { activity.focusCycles = it },
+                                    keyboard = androidx.compose.ui.text.input.KeyboardType.Number)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Checkbox(forward, { activity.focusForward = it }); Text("正向计时，手动结束")
+                                }
+                                Secondary("本次专注限制") { picker = true }
+                                Caption(if (jsonArray(apps).length() == 0) "尚未选择应用，仅专注计时"
+                                    else "专注进行中限制 ${jsonArray(apps).length()} 个应用，暂停与休息时解除")
+                                Caption("本次：${activity.focusMinutes} 分钟专注 · ${activity.focusShortBreak} 分钟短休息 · 每 ${activity.focusCycles} 轮长休息 ${activity.focusLongBreak} 分钟")
+                                Caption("休息结束自动开始下一轮；专注与休息结束均有提示。后台弹窗需要悬浮窗权限。")
+                            }
+                        }
+                    } else {
+                        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text("专注 ${focus.optInt("minutes")}分 · 休息 ${focus.optInt("shortBreak")}分",
+                                Modifier.weight(1f), style = MaterialTheme.typography.labelLarge,
+                                maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                            Caption("本次配置")
+                        }
                     }
                 }
                 val summary = if (focus != null)
@@ -255,62 +324,6 @@ internal fun FocusScreen(activity: ComposeMainActivity, nav: NavHostController, 
                             Text(shown, style = MaterialTheme.typography.labelMedium, maxLines = 1,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                        }
-                    }
-                }
-                if (focus == null) {
-                    Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).testTag("focus-preferences")
-                        .quietClickable(if (preferencesOpen) "收起本次配置" else "调整本次配置") {
-                            preferencesOpen = !preferencesOpen
-                        }, verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("本次配置", style = MaterialTheme.typography.labelLarge)
-                            Caption("${activity.focusMinutes} 分钟专注 · ${activity.focusShortBreak} 分钟休息 · ${activity.focusCycles} 轮")
-                        }
-                        DisclosureMark(preferencesOpen)
-                    }
-                    FormDisclosure(preferencesOpen) {
-                        Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                listOf("25/5", "50/10", "自定义").forEach { preset ->
-                                    FilterChip(selected = activity.focusPreset == preset, onClick = {
-                                        activity.focusPreset = preset
-                                        when (preset) {
-                                            "25/5" -> { activity.focusMinutes = "25"; activity.focusShortBreak = "5"; activity.focusLongBreak = "15" }
-                                            "50/10" -> { activity.focusMinutes = "50"; activity.focusShortBreak = "10"; activity.focusLongBreak = "20" }
-                                        }
-                                    }, label = { Text(preset) }, modifier = Modifier.heightIn(min = 48.dp))
-                                }
-                            }
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                verticalAlignment = Alignment.Bottom) {
-                                Box(Modifier.weight(1f)) {
-                                    SelectField("关联任务", listOf("自由专注") + tasks.map { it.optString("name") },
-                                        (tasks.indexOfFirst { it.optString("id") == taskId } + 1).coerceAtLeast(0)) {
-                                        activity.selectFocusTask(if (it == 0) "" else tasks[it - 1].optString("id"))
-                                    }
-                                }
-                                Input("分钟", minutes, { activity.focusMinutes = it; activity.focusPreset = "自定义" }, Modifier.weight(1f),
-                                    keyboard = androidx.compose.ui.text.input.KeyboardType.Number)
-                            }
-                            if (activity.focusPreset == "自定义" || activity.focusPreset == "custom") {
-                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Input("短休息", activity.focusShortBreak, { activity.focusShortBreak = it }, Modifier.weight(1f),
-                                        keyboard = androidx.compose.ui.text.input.KeyboardType.Number)
-                                    Input("长休息", activity.focusLongBreak, { activity.focusLongBreak = it }, Modifier.weight(1f),
-                                        keyboard = androidx.compose.ui.text.input.KeyboardType.Number)
-                                }
-                            }
-                            Input("每组轮次", activity.focusCycles, { activity.focusCycles = it },
-                                keyboard = androidx.compose.ui.text.input.KeyboardType.Number)
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Checkbox(forward, { activity.focusForward = it }); Text("正向计时，手动结束")
-                            }
-                            Secondary("本次专注限制") { picker = true }
-                            Caption(if (jsonArray(apps).length() == 0) "尚未选择应用，仅专注计时"
-                                else "专注进行中限制 ${jsonArray(apps).length()} 个应用，暂停与休息时解除")
-                            Caption("本次：${activity.focusMinutes} 分钟专注 · ${activity.focusShortBreak} 分钟短休息 · 每 ${activity.focusCycles} 轮长休息 ${activity.focusLongBreak} 分钟")
-                            Caption("休息结束自动开始下一轮；专注与休息结束均有提示。后台弹窗需要悬浮窗权限。")
                         }
                     }
                 }
@@ -421,28 +434,7 @@ internal fun StatsScreen(activity: ComposeMainActivity, nav: NavHostController,
     val done = data.done
     val failed = data.failed
     val review = data.review
-    StatsRangeLine("统计范围 · ${timeText(start)} 至现在", loading)
-    Panel {
-        Text("本期概览", style = MaterialTheme.typography.titleMedium)
-        Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.xxs)) {
-            Caption("专注时长")
-            AnimatedStatDuration(focus, motion, "专注时长")
-        }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
-            Column(Modifier.weight(1f)) {
-                Caption("有效专注段")
-                Text("${data.focusSegments}", style = AppTypography.number, fontSize = 21.sp, fontWeight = FontWeight.Bold)
-            }
-            Column(Modifier.weight(1f)) {
-                Caption("到期任务完成率")
-                Text(if (data.verified == 0) "—" else "${done * 100 / data.verified}%",
-                    style = AppTypography.number, fontSize = 21.sp, fontWeight = FontWeight.Bold)
-            }
-        }
-        Caption(if (data.focusSegments > 0) "每段平均 ${duration(focus / data.focusSegments)} · 到场 ${duration(presence)}"
-            else "到场时长 ${duration(presence)}")
-        Caption("相连计时片段合并为一段；暂停或休息后的不连续计时另计。")
-    }
+    StatsOverviewCard(data, loading, motion)
     val rows = data.rows
     Section("专注时长")
     Panel {
@@ -461,8 +453,14 @@ internal fun StatsScreen(activity: ComposeMainActivity, nav: NavHostController,
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
             Column(Modifier.weight(1f)) {
-                Text("已核验任务  ${if (data.verified == 0) "暂无" else "$done / ${data.verified}"}", fontSize = 19.sp)
-                Caption("$failed 项未完成 · $review 项待核验")
+                Caption("已核验任务")
+                MetricValueText(if (data.verified == 0) listOf(MetricPart("—"))
+                    else amountMetricParts("$done / ${data.verified}"), fontSize = 21.sp)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    MetaPill("$failed 项未完成")
+                    MetaPill("$review 项待核验")
+                }
             }
             if (data.verified > 0) {
                 val completed = animatedStatProgress(done.toFloat() / data.verified,
@@ -481,7 +479,11 @@ internal fun StatsScreen(activity: ComposeMainActivity, nav: NavHostController,
         Caption("本期专注时长 · 单位：分钟")
         if (goalDurations.isEmpty()) Caption("暂无关联计划的专注记录。开始专注时选择任务即可累计。")
         goalDurations.forEach { (id, name, ms) ->
-            Text("$name · ${duration(ms)}")
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Text(name, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                MetricValueText(durationMetricParts(ms), Modifier.widthIn(max = 140.dp), fontSize = 16.sp)
+            }
             val progress = animatedStatProgress(ms.toFloat() /
                 goalDurations.first().millis.coerceAtLeast(1), "$range-goal-$id", motion)
             LinearProgressIndicator(progress = { progress },
@@ -496,7 +498,11 @@ internal fun StatsScreen(activity: ComposeMainActivity, nav: NavHostController,
         Caption("本期到场时长 · 单位：分钟")
         if (placeDurations.isEmpty()) Caption("暂无到场记录。添加地点并开启监测后即可累计。")
         placeDurations.forEach { (id, name, ms) ->
-            Text("$name · ${duration(ms)}")
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Text(name, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                MetricValueText(durationMetricParts(ms), Modifier.widthIn(max = 140.dp), fontSize = 16.sp)
+            }
             val progress = animatedStatProgress(ms.toFloat() /
                 placeDurations.first().millis.coerceAtLeast(1), "$range-place-$id", motion)
             LinearProgressIndicator(progress = { progress },
@@ -517,13 +523,67 @@ internal fun StatsScreen(activity: ComposeMainActivity, nav: NavHostController,
 }
 
 @Composable
-internal fun StatsRangeLine(label: String, loading: Boolean) {
-    Row(Modifier.fillMaxWidth().heightIn(min = 24.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, Modifier.weight(1f), style = MaterialTheme.typography.labelMedium,
+internal fun StatsRangeLine(label: String, loading: Boolean, modifier: Modifier = Modifier) {
+    Box(modifier.heightIn(min = 24.dp), contentAlignment = Alignment.CenterEnd) {
+        Text(if (loading) "更新中…" else label, style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1,
             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-        if (loading) Text(" · 正在更新…", style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+    }
+}
+
+@Composable
+internal fun StatsOverviewCard(data: StatisticsReport, loading: Boolean, motion: Boolean) {
+    var rulesOpen by rememberSaveable { mutableStateOf(false) }
+    Panel {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("本期概览", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+            val rangeLabel = SimpleDateFormat("M/d", Locale.CHINA).let {
+                "${it.format(Date(data.start))}—${it.format(Date(data.now))}"
+            }
+            StatsRangeLine(rangeLabel, loading, Modifier.weight(1f))
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.weight(.58f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Caption("专注总时长")
+                Box(Modifier.fillMaxWidth().height(if (LocalDensity.current.fontScale > 1.2f) 96.dp else 72.dp)) {
+                    AnimatedStatDuration(data.focus, motion, "专注时长")
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("段均", Modifier.alignByBaseline(), style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    MetricValueText(listOf(MetricPart(if (data.focusSegments > 0)
+                        "${data.focus / data.focusSegments / Rules.MINUTE}" else "—", "分钟")),
+                        Modifier.alignByBaseline(), fontSize = 16.sp)
+                }
+            }
+            Column(Modifier.weight(.42f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column {
+                    Caption("有效专注段")
+                    MetricValueText(listOf(MetricPart("${data.focusSegments}", "段")), fontSize = 21.sp)
+                }
+                Column {
+                    Caption("到期任务完成率")
+                    MetricValueText(listOf(MetricPart(if (data.verified == 0) "—"
+                        else "${data.done * 100 / data.verified}", if (data.verified == 0) "" else "%")), fontSize = 21.sp)
+                }
+            }
+        }
+        MetaPill {
+            Text("累计到场", Modifier.alignByBaseline())
+            MetricValueText(durationMetricParts(data.presence), Modifier.alignByBaseline(),
+                fontSize = 12.sp, unitSize = 12.sp)
+        }
+        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
+            .quietClickable(if (rulesOpen) "收起统计规则" else "展开统计规则") { rulesOpen = !rulesOpen },
+            verticalAlignment = Alignment.CenterVertically) {
+            Text("ⓘ 统计规则", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary)
+            DisclosureMark(rulesOpen)
+        }
+        FormDisclosure(rulesOpen) {
+            Caption("相连计时片段合并为一段；暂停或休息后的不连续计时另计。")
+        }
     }
 }
 
@@ -649,18 +709,8 @@ internal fun AnimatedStatDuration(actualMs: Long, motion: Boolean, label: String
     val actualMinutes = (actualMs / Rules.MINUTE).coerceIn(0, Int.MAX_VALUE.toLong()).toInt()
     val content: @Composable (Int) -> Unit = { shown ->
         ScreenExitGuard(shown != actualMinutes, Modifier.wrapContentSize()) {
-            Row(Modifier.clearAndSetSemantics { contentDescription = "$label ${duration(actualMs)}" },
-                horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                if (shown >= 60) {
-                    Text("${shown / 60}", Modifier.alignByBaseline(), style = AppTypography.number,
-                        fontSize = 28.sp, fontWeight = FontWeight.Bold)
-                    Text("小时", Modifier.alignByBaseline(), style = MaterialTheme.typography.labelMedium)
-                }
-                Text("${if (shown >= 60) shown % 60 else shown}", Modifier.alignByBaseline(),
-                    style = AppTypography.number, fontSize = 28.sp, fontWeight = FontWeight.Bold)
-                Text(if (shown >= 60) "分" else "分钟", Modifier.alignByBaseline(),
-                    style = MaterialTheme.typography.labelMedium)
-            }
+            MetricValueText(minuteMetricParts(shown.toLong()),
+                Modifier.clearAndSetSemantics { contentDescription = "$label ${duration(actualMs)}" }, fontSize = 28.sp)
         }
     }
     if (!motion) content(actualMinutes)

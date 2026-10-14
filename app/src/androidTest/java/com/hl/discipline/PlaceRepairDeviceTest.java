@@ -108,8 +108,17 @@ public class PlaceRepairDeviceTest {
       device.takeScreenshot(new File(context.getExternalCacheDir(), "map-edit-0.11.8.png"));
       assertEquals(4, Store.polygon(db.one("places", "map-repair")).points.size());
       scenario.recreate(); text("确认范围");
-      tap("撤销选区修改"); text("已撤销选区修改");
-      tap("清空选区"); text("选区已清空"); scenario.recreate(); text("选区已清空");
+      UiObject2 undo = device.wait(Until.findObject(By.desc("撤销选区修改")), 6000);
+      assertNotNull(undo); undo.click(); text("已撤销选区修改");
+      assertFalse(device.hasObject(By.text("清空选区")));
+      // The old clear control is deliberately absent from the HUD. Retain its draft/undo contract.
+      scenario.onActivity(activity -> {
+        try {
+          java.lang.reflect.Method clear = ComposePlaceActivity.class.getDeclaredMethod("clearSelection");
+          clear.setAccessible(true); clear.invoke(activity);
+        } catch (Exception e) { throw new AssertionError(e); }
+      });
+      text("选区已清空"); scenario.recreate(); text("选区已清空");
       scenario.onActivity(activity -> {
         try {
           java.lang.reflect.Field bounds = ComposePlaceActivity.class.getDeclaredField("rect");

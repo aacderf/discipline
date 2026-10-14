@@ -2,7 +2,7 @@
 
 [![Android build](https://github.com/aacderf/discipline/actions/workflows/android.yml/badge.svg)](https://github.com/aacderf/discipline/actions/workflows/android.yml)
 
-Android 本地自律工具，基于 Kotlin / Java 与 Jetpack Compose。本仓库公开 0.12.4 的完整 App 源码、测试、资源与构建流程。
+Android 本地自律工具，基于 Kotlin / Java 与 Jetpack Compose。本仓库公开 0.12.5 的完整 App 源码、测试、资源与构建流程。
 
 ## 功能
 

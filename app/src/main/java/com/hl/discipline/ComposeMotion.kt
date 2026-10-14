@@ -235,15 +235,16 @@ internal fun TaskTypeGlyph(metric: String, modifier: Modifier = Modifier, size: 
 }
 
 @Composable
-internal fun GlassTaskPanel(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+internal fun GlassTaskPanel(modifier: Modifier = Modifier, compact: Boolean = false,
+    content: @Composable ColumnScope.() -> Unit) {
     val palette = AppColors.current
     // Keep one opaque boundary on every ABI. Refraction can fold pale edges over
     // controls and progress tracks on a real device, even when x86 looks correct.
     Surface(modifier.fillMaxWidth(), shape = AppShapes.glass,
         color = MaterialTheme.colorScheme.surface, tonalElevation = 0.dp,
         border = androidx.compose.foundation.BorderStroke(1.dp, palette.glassBorder)) {
-        Column(Modifier.padding(AppSpacing.md + 2.dp),
-            verticalArrangement = Arrangement.spacedBy(AppSpacing.xs + 2.dp), content = content)
+        Column(Modifier.padding(if (compact) 12.dp else AppSpacing.md + 2.dp),
+            verticalArrangement = Arrangement.spacedBy(if (compact) 6.dp else AppSpacing.xs + 2.dp), content = content)
     }
 }
 

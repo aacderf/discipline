@@ -19,6 +19,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalDensity
 import kotlinx.coroutines.Dispatchers
@@ -88,9 +89,11 @@ private fun usageTime(millis:Long):String {
         if(data!=null) {
             Caption("${data.dates.first()}—${data.dates.last()} · 更新于 ${timeText(data.end)}")
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                listOf("总前台时长" to usageTime(data.total),"有记录日均" to usageTime(data.total/data.availableDays.count { it }.coerceAtLeast(1)),"使用应用" to "${data.apps.size} 个")
+                listOf("总前台时长" to durationMetricParts(data.total),
+                    "有记录日均" to durationMetricParts(data.total/data.availableDays.count { it }.coerceAtLeast(1)),
+                    "使用应用" to listOf(MetricPart("${data.apps.size}", "个")))
                     .forEach { (label,value) -> Column(Modifier.weight(1f)) {
-                        Caption(label); Text(value,style=MaterialTheme.typography.titleMedium)
+                        Caption(label); MetricValueText(value, fontSize = 20.sp)
                     } }
             }
             Section("每日应用前台时长")
@@ -119,7 +122,8 @@ private fun usageTime(millis:Long):String {
                         modifier=Modifier.semantics { contentDescription="分析${app.label}" })
                     Column(Modifier.weight(1f)) { Text(app.label,style=MaterialTheme.typography.bodyLarge)
                         Caption(if(app.canLimit) "有记录日均 ${usageTime(app.total/data.availableDays.count { it }.coerceAtLeast(1))}" else "必要应用 · 仅显示数据") }
-                    Text(usageTime(app.total),style=MaterialTheme.typography.labelLarge)
+                    MetricValueText(durationMetricParts(app.total),
+                        Modifier.widthIn(max = 108.dp), fontSize = 16.sp)
                 } }
                 if(data.apps.size>10) TextButton(onClick={showAll=!showAll}) { Text(if(showAll) "收起应用列表" else "查看全部 ${data.apps.size} 个应用") }
             }

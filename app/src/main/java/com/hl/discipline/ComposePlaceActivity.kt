@@ -369,29 +369,36 @@ class ComposePlaceActivity : ComponentActivity() {
             GlassTaskPanel(Modifier.fillMaxWidth().align(androidx.compose.ui.Alignment.BottomCenter)
                 .navigationBarsPadding().imePadding().padding(10.dp)
                 .animateContentSize(tween(if (motionEnabled) AppMotion.magneticSettle else 0, easing = AppMotion.easing))) {
-                    Text(when (step) { 1 -> "手绘范围"; 2 -> "确认范围"; 3 -> "命名地点"; else -> "选择地点" },
-                        style = MaterialTheme.typography.titleMedium)
-                    Caption(status)
-                    val bounds = rect
-                    if (picked && bounds != null) Caption("横向 %.0f 米 · 纵向 %.0f 米".format(Locale.CHINA,
-                        bounds.width(), bounds.height()))
-                    if (undoBoundary != null || step == 2) Row(Modifier.fillMaxWidth(),
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                        if (undoBoundary != null) TextButton(onClick = { undoBoundaryEdit() }) { Text("撤销选区修改") }
-                        Spacer(Modifier.weight(1f))
-                        if (step == 2) GlassSecondaryButton("清空选区", tone = GlassSecondaryTone.Destructive) { clearSelection() }
+                        Text(when (step) { 1 -> "手绘范围"; 2 -> "确认范围"; 3 -> "命名地点"; else -> "选择地点" },
+                            modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                        val bounds = rect
+                        if (picked && bounds != null) Text("横向 %.0f 米 · 纵向 %.0f 米".format(Locale.CHINA,
+                            bounds.width(), bounds.height()), modifier = Modifier.widthIn(max = 152.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
+                    Caption(status)
                     if (step == 2 && vertices.isNotEmpty()) Row(Modifier.fillMaxWidth(),
                         verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                         TextButton(onClick = { selectVertex(if (selectedVertex <= 0) vertices.lastIndex else selectedVertex - 1) },
                             modifier = Modifier.size(48.dp).semantics { contentDescription = "上一个边界点" }) { Text("‹") }
-                        Text(if (selectedVertex in vertices.indices) "边界点 ${selectedVertex + 1} / ${vertices.size}"
-                            else "点选边界点 (${vertices.size})", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                        Text(if (selectedVertex in vertices.indices) "顶点 ${selectedVertex + 1}/${vertices.size}"
+                            else "点选顶点 (${vertices.size})", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium)
                         TextButton(onClick = { selectVertex((selectedVertex + 1) % vertices.size) },
                             modifier = Modifier.size(48.dp).semantics { contentDescription = "下一个边界点" }) { Text("›") }
                         TextButton(enabled = selectedVertex in vertices.indices && vertices.size > 3,
-                            onClick = { removeSelectedVertex() }) { Text("删除选点", color = if (selectedVertex in vertices.indices && vertices.size > 3)
+                            onClick = { removeSelectedVertex() }, modifier = Modifier.heightIn(min = 48.dp),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) { Text("删除选点", color = if (selectedVertex in vertices.indices && vertices.size > 3)
                                 MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant) }
+                        if (undoBoundary != null) TextButton(onClick = { undoBoundaryEdit() },
+                            modifier = Modifier.size(48.dp).semantics { contentDescription = "撤销选区修改" },
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) { Text("↶") }
+                    }
+                    if (undoBoundary != null && step != 2) TextButton(onClick = { undoBoundaryEdit() },
+                        modifier = Modifier.heightIn(min = 48.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) {
+                        Text("撤销选区修改", style = MaterialTheme.typography.labelMedium)
                     }
                     if (step == 2) Spacer(Modifier.height(12.dp))
                     when (step) {
