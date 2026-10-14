@@ -18,6 +18,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.focus.onFocusChanged
@@ -46,7 +48,11 @@ internal fun GlassSwitch(checked: Boolean, onCheckedChange: ((Boolean) -> Unit)?
                         modifier: Modifier = Modifier, enabled: Boolean = true) {
     val palette = AppColors.current
     val colors = MaterialTheme.colorScheme
-    Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled,
+    val haptics = LocalHapticFeedback.current
+    Switch(checked = checked, onCheckedChange = onCheckedChange?.let { callback -> { next ->
+        if (enabled && next != checked) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        callback(next)
+    } }, enabled = enabled,
         modifier = modifier.heightIn(min = 48.dp),
         colors = SwitchDefaults.colors(
             checkedThumbColor = palette.navigationInk,
@@ -68,7 +74,11 @@ internal fun GlassCheckbox(checked: Boolean, onCheckedChange: ((Boolean) -> Unit
                           modifier: Modifier = Modifier, enabled: Boolean = true) {
     val palette = AppColors.current
     val colors = MaterialTheme.colorScheme
-    Checkbox(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled,
+    val haptics = LocalHapticFeedback.current
+    Checkbox(checked = checked, onCheckedChange = onCheckedChange?.let { callback -> { next ->
+        if (enabled && next != checked) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        callback(next)
+    } }, enabled = enabled,
         modifier = modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
         colors = CheckboxDefaults.colors(checkedColor = colors.primary,
             uncheckedColor = colors.primary, checkmarkColor = colors.onPrimary,
@@ -141,7 +151,7 @@ internal fun JSONArray.toStringList(): List<String> = (0 until length()).map { o
 
 /** Collapse fields in place; only clear focus when this group owns the active input. */
 @Composable
-internal fun FormDisclosure(visible: Boolean, content: @Composable ColumnScope.() -> Unit) {
+internal fun FormDisclosure(visible: Boolean, animateHeight: Boolean = true, content: @Composable ColumnScope.() -> Unit) {
     val motion = LocalMotionEnabled.current
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
@@ -150,9 +160,9 @@ internal fun FormDisclosure(visible: Boolean, content: @Composable ColumnScope.(
         if (!visible && hasFocus) { focus.clearFocus(); keyboard?.hide() }
     }
     AnimatedVisibility(visible,
-        enter = expandVertically(tween(if (motion) AppMotion.fieldExpand else 0, easing = AppMotion.easing)) +
+        enter = if (!animateHeight) androidx.compose.animation.EnterTransition.None else expandVertically(tween(if (motion) AppMotion.fieldExpand else 0, easing = AppMotion.easing)) +
             fadeIn(tween(if (motion) AppMotion.contentEnter else 0, easing = AppMotion.easing)),
-        exit = shrinkVertically(tween(if (motion) AppMotion.collapse else 0, easing = AppMotion.easing)) +
+        exit = if (!animateHeight) androidx.compose.animation.ExitTransition.None else shrinkVertically(tween(if (motion) AppMotion.collapse else 0, easing = AppMotion.easing)) +
             fadeOut(tween(if (motion) AppMotion.contentExit else 0, easing = AppMotion.easing))) {
         ScreenExitGuard(!visible, Modifier.fillMaxWidth().onFocusChanged { hasFocus = it.hasFocus }.focusGroup()) {
             Column(content = content)

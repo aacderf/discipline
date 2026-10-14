@@ -187,9 +187,9 @@ class UiPhaseDeviceTest {
 
     @Test fun statisticsPeriodStaysFixedWhileTheReportScrolls() {
         rule.runOnUiThread { rule.activity.selectedTab = "stats" }
-        rule.waitUntil(6_000) { rule.onAllNodesWithText("导出统计 CSV").fetchSemanticsNodes().isNotEmpty() }
+        rule.waitUntil(6_000) { rule.onAllNodesWithText("专注总时长").fetchSemanticsNodes().isNotEmpty() }
         val before = rule.onNodeWithText("本周", useUnmergedTree = true).getUnclippedBoundsInRoot()
-        rule.onNodeWithText("导出统计 CSV").performScrollTo()
+        rule.onNodeWithTag("stats-list").performScrollToNode(hasText("导出统计 CSV"))
         assertEquals(before, rule.onNodeWithText("本周", useUnmergedTree = true).getUnclippedBoundsInRoot())
         frame("stats-scrolled-fixed-range")
     }
@@ -238,7 +238,7 @@ class UiPhaseDeviceTest {
     @Test fun usagePlansAreReachableWithoutScrollingTheApplicationList() {
         rule.runOnUiThread { rule.activity.selectedTab = "stats" }
         rule.onNodeWithText("应用使用与下周计划").performClick()
-        rule.onNodeWithText("制定下周计划", useUnmergedTree = true).performClick()
+        rule.onNodeWithText("下周限额计划", useUnmergedTree = true).performClick()
         rule.onNodeWithText("手动安排下周").assertIsDisplayed()
         rule.onNodeWithText("选择分析应用 ›").performClick()
         rule.onNodeWithText("过去 7 天").assertIsDisplayed()

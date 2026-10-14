@@ -27,8 +27,9 @@ import androidx.compose.ui.unit.dp
 internal fun ProgressTrack(actual: Float, label: String, modifier: Modifier = Modifier,
                            color: Color = AppColors.current.chartFocus) {
     val bounded = if (actual.isFinite()) actual.coerceIn(0f, 1f) else 0f
+    val motion = LocalMotionEnabled.current
     val position = animateFloatAsState(bounded,
-        tween(if (LocalMotionEnabled.current) AppMotion.progress else 0, easing = AppMotion.easing),
+        progressSpec(motion),
         label = "真实进度位置")
     val track = MaterialTheme.colorScheme.secondaryContainer
     Canvas(modifier.fillMaxWidth().height(6.dp).clearAndSetSemantics {
@@ -37,7 +38,7 @@ internal fun ProgressTrack(actual: Float, label: String, modifier: Modifier = Mo
     }) {
         val radius = size.height / 2f
         drawRoundRect(track, cornerRadius = CornerRadius(radius))
-        val fraction = position.value.coerceIn(0f, 1f)
+        val fraction = (if (motion) position.value else bounded).coerceIn(0f, 1f)
         if (fraction > 0f) drawLine(color, Offset(radius, radius),
             Offset(radius + (size.width - size.height).coerceAtLeast(0f) * fraction, radius),
             strokeWidth = size.height, cap = StrokeCap.Round)

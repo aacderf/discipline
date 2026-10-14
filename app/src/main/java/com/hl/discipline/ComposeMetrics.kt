@@ -8,6 +8,8 @@ import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.TextUnit
@@ -49,6 +51,15 @@ internal fun MetricValueText(parts: List<MetricPart>, modifier: Modifier = Modif
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
+    }
+}
+
+@Composable
+internal fun AnimatedMetricValue(parts: List<MetricPart>, motion: Boolean, fontSize: TextUnit = 21.sp) {
+    if (!motion) MetricValueText(parts, fontSize = fontSize)
+    else AnimatedContent(parts, transitionSpec = { precisionNumberTransform(true) },
+        modifier = Modifier.clipToBounds(), label = "统计指标换字") { shown ->
+        ScreenExitGuard(shown != parts) { MetricValueText(shown, fontSize = fontSize) }
     }
 }
 

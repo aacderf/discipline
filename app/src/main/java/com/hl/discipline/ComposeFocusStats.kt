@@ -5,11 +5,14 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.animation.togetherWith
@@ -135,12 +138,12 @@ internal fun FocusScreen(activity: ComposeMainActivity, nav: NavHostController, 
     }
     var preferencesOpen by rememberSaveable { mutableStateOf(false) }
     var taskPicker by remember { mutableStateOf(false) }
-    BoxWithConstraints(Modifier.fillMaxSize().imePadding()) {
+    BoxWithConstraints(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).imePadding()) {
         val compactWindow = maxHeight < 580.dp || LocalDensity.current.fontScale > 1.15f
         Column(Modifier.fillMaxSize()) {
             Column(Modifier.weight(1f).verticalScroll(scrollState)
-                .padding(horizontal = AppSpacing.page, vertical = AppSpacing.sm),
-                verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
+                .padding(horizontal = AppSpacing.page, vertical = if (compactWindow) 4.dp else AppSpacing.sm),
+                verticalArrangement = Arrangement.spacedBy(if (compactWindow) 4.dp else AppSpacing.sm)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs),
                     verticalAlignment = Alignment.CenterVertically) {
                      val taskControl = Modifier.weight(1f).heightIn(min = 48.dp)
@@ -167,13 +170,14 @@ internal fun FocusScreen(activity: ComposeMainActivity, nav: NavHostController, 
                         Text(" ›", Modifier.clearAndSetSemantics { }, color = MaterialTheme.colorScheme.primary)
                     }
                 }
+                CompanionSettings(activity, compact = true)
                 if (location != null) MetaPill("地点 · $location")
                 val forwardWork = focus?.optBoolean("forward") == true &&
                     (phase == "work" || (phase == "paused" && focus.optString("pausedPhase") != "break"))
                 val time = if (focus == null) (minutes.toLongOrNull() ?: 0) * Rules.MINUTE else
                     if (phase == "ready") focus.optLong("minutes") * Rules.MINUTE else
                         if (forwardWork) focus.optLong("total") else focus.optLong("remaining")
-                FocusInstrumentPanel {
+                FocusInstrumentPanel(compactWindow) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically) {
                         val cycleCount = focus?.optInt("cycles", settings.optInt("cycles", 4))?.coerceAtLeast(1)
@@ -218,7 +222,7 @@ internal fun FocusScreen(activity: ComposeMainActivity, nav: NavHostController, 
                         Text(if (forwardWork) "已专注" else "剩余时间", fontSize = 13.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelMedium)
                         Text(countdown(time), Modifier.testTag("focus-time"),
-                            fontSize = if (compactWindow && largeType) 36.sp else if (compact) 48.sp else 54.sp, maxLines = 1, softWrap = false,
+                            fontSize = if (compactWindow && largeType) 36.sp else if (compactWindow) 42.sp else if (compact) 48.sp else 54.sp, maxLines = 1, softWrap = false,
                             fontWeight = FontWeight.Bold, style = AppTypography.number,
                             color = MaterialTheme.colorScheme.onSurface)
                     }
@@ -226,7 +230,7 @@ internal fun FocusScreen(activity: ComposeMainActivity, nav: NavHostController, 
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
                             HourglassInstrument({ ring.value }, presentation.hourglass, compact, motion, richMotion,
-                                "本轮进度 ${(fraction * 100).toInt()}%", instrumentSize = 80.dp)
+                                "本轮进度 ${(fraction * 100).toInt()}%", instrumentSize = 64.dp)
                             Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally, content = timeReadout)
                         }
                     } else Column(Modifier.align(Alignment.CenterHorizontally), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -255,12 +259,12 @@ internal fun FocusScreen(activity: ComposeMainActivity, nav: NavHostController, 
                             .quietClickable(if (preferencesOpen) "收起本次配置" else "调整本次配置") {
                                 preferencesOpen = !preferencesOpen
                             }, verticalAlignment = Alignment.CenterVertically) {
-                            Text("专注 ${activity.focusMinutes}分 · 休息 ${activity.focusShortBreak}分",
-                                Modifier.weight(1f), style = MaterialTheme.typography.labelLarge,
+                            Text("⚙ 本次配置：专注 ${activity.focusMinutes}分 · 休息 ${activity.focusShortBreak}分",
+                                Modifier.weight(1f), style = MaterialTheme.typography.labelMedium,
                                 maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                             DisclosureMark(preferencesOpen)
                         }
-                        FormDisclosure(preferencesOpen) {
+                        FormDisclosure(preferencesOpen, animateHeight = false) {
                             Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                     listOf("25/5", "50/10", "自定义").forEach { preset ->
@@ -306,8 +310,8 @@ internal fun FocusScreen(activity: ComposeMainActivity, nav: NavHostController, 
                         }
                     } else {
                         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text("专注 ${focus.optInt("minutes")}分 · 休息 ${focus.optInt("shortBreak")}分",
-                                Modifier.weight(1f), style = MaterialTheme.typography.labelLarge,
+                            Text("⚙ 本次配置：专注 ${focus.optInt("minutes")}分 · 休息 ${focus.optInt("shortBreak")}分",
+                                Modifier.weight(1f), style = MaterialTheme.typography.labelMedium,
                                 maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                             Caption("本次配置")
                         }
@@ -327,7 +331,6 @@ internal fun FocusScreen(activity: ComposeMainActivity, nav: NavHostController, 
                         }
                     }
                 }
-                CompanionSettings(activity)
                 Spacer(Modifier.height(AppSpacing.xs))
             }
             // Actions stay in the available viewport, independent of instrument/config scroll.
@@ -382,21 +385,22 @@ internal fun FocusScreen(activity: ComposeMainActivity, nav: NavHostController, 
 }
 
 @Composable
-private fun FocusInstrumentPanel(content: @Composable ColumnScope.() -> Unit) {
-    Surface(Modifier.fillMaxWidth(), shape = AppShapes.card, color = MaterialTheme.colorScheme.surface,
+private fun FocusInstrumentPanel(compact: Boolean, content: @Composable ColumnScope.() -> Unit) {
+    Surface(Modifier.fillMaxWidth().animateContentSize(expansionSpec(LocalMotionEnabled.current)), shape = AppShapes.card, color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = .48f))) {
-        Column(Modifier.padding(horizontal = AppSpacing.md, vertical = AppSpacing.xs),
-            verticalArrangement = Arrangement.spacedBy(AppSpacing.xs), content = content)
+        Column(Modifier.padding(horizontal = AppSpacing.md, vertical = if (compact) 4.dp else AppSpacing.xs),
+            verticalArrangement = Arrangement.spacedBy(if (compact) 4.dp else AppSpacing.xs), content = content)
     }
 }
 
 @Composable
 internal fun StatsScreen(activity: ComposeMainActivity, nav: NavHostController,
-                         scrollState: ScrollState = rememberScrollState()) {
+                         scrollState: LazyListState = rememberLazyListState(),
+                         retainedReport: MutableState<StatisticsReport?> = remember { mutableStateOf(null) }) {
     val revision = activity.revision
     var selectedRange by rememberSaveable { mutableIntStateOf(7) }
     val motion = richMotionEnabled()
-    var report by remember { mutableStateOf<StatisticsReport?>(null) }
+    var report by retainedReport
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf("") }
     var retry by remember { mutableIntStateOf(0) }
@@ -408,117 +412,127 @@ internal fun StatsScreen(activity: ComposeMainActivity, nav: NavHostController,
         catch (_: Exception) { error = "统计暂时无法更新，原始记录仍保留。" }
         finally { loading = false }
     }
-    Column(Modifier.fillMaxSize()) {
-    Box(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).padding(bottom = 8.dp)) {
-    DraggableSegment(listOf("今天", "本周", "本月"), when (selectedRange) { 1 -> 0; 7 -> 1; else -> 2 }, activity.motionEnabled) {
-        selectedRange = listOf(1, 7, 30)[it]
-    }
-    }
-    Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(scrollState)
-        .padding(bottom = AppSpacing.lg), verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) content@{
-    Secondary("应用使用与下周计划") { nav.navigate("usage-insights") }
-    if (error.isNotEmpty()) {
-        Caption(error)
-        Secondary("重新整理统计") { retry++ }
-    }
     val data = report
-    if (data == null) {
-        Panel { Text("本期概览", style = MaterialTheme.typography.titleMedium)
-            Caption(if (loading) "正在整理本地计时与任务记录…" else "可稍后重试，计划和计时不受影响。") }
-        return@content
+    val loadingScroll = rememberLazyListState()
+    var chartSelection by rememberSaveable(data?.range, data?.start) {
+        mutableIntStateOf(data?.rows?.indices?.maxByOrNull { data.rows[it].focus } ?: 0)
     }
-    val range = data.range
-    val start = data.start
-    val focus = data.focus
-    val presence = data.presence
-    val done = data.done
-    val failed = data.failed
-    val review = data.review
-    StatsOverviewCard(data, loading, motion)
-    val rows = data.rows
-    Section("专注时长")
-    Panel {
-        Caption(if (range == 1) "今天 · 每 4 小时" else if (range == 7) "本周 · 每天" else "本月 · 每天")
-        Caption("单位：分钟 · 薄荷柱表示有效专注时长")
-        var selected by remember(range, data.start) { mutableIntStateOf(rows.indices.maxByOrNull { rows[it].focus } ?: 0) }
-        FocusDurationChart(rows, selected, range, motion, onStartFocus = { activity.openTab("focus", nav) }) { selected = it }
-        if (rows.any { it.focus > 0 }) {
-            Caption("${rows[selected].label} · 专注 ${duration(rows[selected].focus)}")
-            val peak = rows.maxByOrNull { it.focus }
-            if (peak != null) Caption("本期专注最多的是 ${peak.label}，共 ${duration(peak.focus)}。")
+    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        Box(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).padding(bottom = 8.dp)) {
+            DraggableSegment(listOf("今天", "本周", "本月"), when (selectedRange) { 1 -> 0; 7 -> 1; else -> 2 }, activity.motionEnabled) {
+                selectedRange = listOf(1, 7, 30)[it]
+            }
         }
-    }
-    Section("任务完成")
-    Panel {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
-            Column(Modifier.weight(1f)) {
-                Caption("已核验任务")
-                MetricValueText(if (data.verified == 0) listOf(MetricPart("—"))
-                    else amountMetricParts("$done / ${data.verified}"), fontSize = 21.sp)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    MetaPill("$failed 项未完成")
-                    MetaPill("$review 项待核验")
+        LazyColumn(Modifier.weight(1f).fillMaxWidth().background(MaterialTheme.colorScheme.background).testTag("stats-list"),
+            state = if (data == null) loadingScroll else scrollState, contentPadding = PaddingValues(bottom = AppSpacing.lg),
+            verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
+            item("usage-entry", contentType = "action") { Secondary("应用使用与下周计划") { nav.navigate("usage-insights") } }
+            if (error.isNotEmpty()) item("error", contentType = "error") {
+                Column { Caption(error); Secondary("重新整理统计") { retry++ } }
+            }
+            if (data == null) item("overview", contentType = "overview") {
+                Panel { Text("本期概览", style = MaterialTheme.typography.titleMedium)
+                    Caption(if (loading) "正在整理本地计时与任务记录…" else "可稍后重试，计划和计时不受影响。") }
+            } else {
+                val range = data.range
+                val start = data.start
+                val focus = data.focus
+                val presence = data.presence
+                val done = data.done
+                val failed = data.failed
+                val review = data.review
+                item("overview", contentType = "overview") { StatsOverviewCard(data, loading, motion) }
+                val rows = data.rows
+                item("focus-heading", contentType = "heading") { Section("专注时长") }
+                item("focus-chart", contentType = "chart") { Panel {
+                    Caption(if (range == 1) "今天 · 每 4 小时" else if (range == 7) "本周 · 每天" else "本月 · 每天")
+                    Caption("单位：分钟 · 薄荷柱表示有效专注时长")
+                    val selected = chartSelection.coerceIn(0, rows.lastIndex.coerceAtLeast(0))
+                    FocusDurationChart(rows, selected, range, motion, onStartFocus = { activity.openTab("focus", nav) }) { chartSelection = it }
+                    if (rows.any { it.focus > 0 }) {
+                        Caption("${rows[selected].label} · 专注 ${duration(rows[selected].focus)}")
+                        val peak = rows.maxByOrNull { it.focus }
+                        if (peak != null) Caption("本期专注最多的是 ${peak.label}，共 ${duration(peak.focus)}。")
+                    }
+                } }
+                item("tasks-heading", contentType = "heading") { Section("任务完成") }
+                item("tasks", contentType = "card") { Panel {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
+                        Column(Modifier.weight(1f)) {
+                            Caption("已核验任务")
+                            MetricValueText(if (data.verified == 0) listOf(MetricPart("—"))
+                                else amountMetricParts("$done / ${data.verified}"), fontSize = 21.sp)
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                MetaPill("$failed 项未完成")
+                                MetaPill("$review 项待核验")
+                            }
+                        }
+                        if (data.verified > 0) {
+                            val completed = animatedStatProgress(done.toFloat() / data.verified,
+                                "$range-task-completion", motion)
+                            CircularProgressIndicator(progress = { completed.value }, modifier = Modifier.size(56.dp)
+                                .clearAndSetSemantics { contentDescription = "已核验到期任务完成 $done 项，共 ${data.verified} 项" },
+                                strokeWidth = 5.dp, color = AppColors.current.chartFocus,
+                                trackColor = MaterialTheme.colorScheme.surfaceVariant)
+                        }
+                    }
+                    Caption("按本期到期任务统计；待核验与请假不计入完成率。")
+                } }
+                item("goals-heading", contentType = "heading") { Section("各计划专注时长") }
+                val goalDurations = data.goals
+                item("goals-summary", contentType = "caption") {
+                    Caption("本期专注时长 · 单位：分钟")
+                    if (goalDurations.isEmpty()) Caption("暂无关联计划的专注记录。开始专注时选择任务即可累计。")
                 }
-            }
-            if (data.verified > 0) {
-                val completed = animatedStatProgress(done.toFloat() / data.verified,
-                    "$range-task-completion", motion)
-                CircularProgressIndicator(progress = { completed }, modifier = Modifier.size(56.dp)
-                    .clearAndSetSemantics { contentDescription = "已核验到期任务完成 $done 项，共 ${data.verified} 项" },
-                    strokeWidth = 5.dp, color = AppColors.current.chartFocus,
-                    trackColor = MaterialTheme.colorScheme.surfaceVariant)
+                items(goalDurations, key = { "goal-${it.id}" }, contentType = { "distribution" }) { (id, name, ms) ->
+                    Panel(if (motion) Modifier.animateItem(placementSpec = spring(dampingRatio = .85f, stiffness = 520f)) else Modifier) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            Text(name, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                            MetricValueText(durationMetricParts(ms), Modifier.widthIn(max = 140.dp), fontSize = 16.sp)
+                        }
+                        val progress = animatedStatProgress(ms.toFloat() /
+                            goalDurations.first().millis.coerceAtLeast(1), "$range-goal-$id", motion)
+                        LinearProgressIndicator(progress = { progress.value },
+                            Modifier.fillMaxWidth(), color = AppColors.current.chartFocus,
+                            trackColor = MaterialTheme.colorScheme.surfaceVariant)
+                    }
+                }
+                if (goalDurations.isNotEmpty()) item("goals-peak", contentType = "caption") { Caption("投入最多的计划：${goalDurations.first().title}。") }
+                item("places-heading", contentType = "heading") { Section("各地点到场时长") }
+                val placeDurations = data.places
+                item("places-summary", contentType = "caption") {
+                    Caption("本期到场时长 · 单位：分钟")
+                    if (placeDurations.isEmpty()) Caption("暂无到场记录。添加地点并开启监测后即可累计。")
+                }
+                items(placeDurations, key = { "place-${it.id}" }, contentType = { "distribution" }) { (id, name, ms) ->
+                    Panel(if (motion) Modifier.animateItem(placementSpec = spring(dampingRatio = .85f, stiffness = 520f)) else Modifier) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            Text(name, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                            MetricValueText(durationMetricParts(ms), Modifier.widthIn(max = 140.dp), fontSize = 16.sp)
+                        }
+                        val progress = animatedStatProgress(ms.toFloat() /
+                            placeDurations.first().millis.coerceAtLeast(1), "$range-place-$id", motion)
+                        LinearProgressIndicator(progress = { progress.value },
+                            Modifier.fillMaxWidth(), color = AppColors.current.chartPresence,
+                            trackColor = MaterialTheme.colorScheme.surfaceVariant)
+                    }
+                }
+                if (placeDurations.isNotEmpty()) item("places-peak", contentType = "caption") { Caption("停留最久的地点：${placeDurations.first().title}。") }
+                item("review", contentType = "review") { Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
+                    Section("复盘")
+                    Caption(when { failed > 0 -> "有 $failed 项任务未完成。回看目标是否过大、时间是否合适。"
+                        review > 0 -> "先处理定位异常，核验后再判断本期完成情况。"
+                        data.ended == 0 -> "完成第一个周期后，这里会提供复盘提示。"
+                        else -> "本期已完成 $done 项任务。" })
+                    Secondary("查看操作与异常记录") { nav.navigate("events") }
+                    Secondary("导出统计 CSV") { activity.exportCsv() }
+                } }
             }
         }
-        Caption("按本期到期任务统计；待核验与请假不计入完成率。")
-    }
-    Section("各计划专注时长")
-    val goalDurations = data.goals
-    Panel {
-        Caption("本期专注时长 · 单位：分钟")
-        if (goalDurations.isEmpty()) Caption("暂无关联计划的专注记录。开始专注时选择任务即可累计。")
-        goalDurations.forEach { (id, name, ms) ->
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically) {
-                Text(name, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                MetricValueText(durationMetricParts(ms), Modifier.widthIn(max = 140.dp), fontSize = 16.sp)
-            }
-            val progress = animatedStatProgress(ms.toFloat() /
-                goalDurations.first().millis.coerceAtLeast(1), "$range-goal-$id", motion)
-            LinearProgressIndicator(progress = { progress },
-                Modifier.fillMaxWidth(), color = AppColors.current.chartFocus,
-                trackColor = MaterialTheme.colorScheme.surfaceVariant)
-        }
-        if (goalDurations.isNotEmpty()) Caption("投入最多的计划：${goalDurations.first().title}。")
-    }
-    Section("各地点到场时长")
-    val placeDurations = data.places
-    Panel {
-        Caption("本期到场时长 · 单位：分钟")
-        if (placeDurations.isEmpty()) Caption("暂无到场记录。添加地点并开启监测后即可累计。")
-        placeDurations.forEach { (id, name, ms) ->
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically) {
-                Text(name, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                MetricValueText(durationMetricParts(ms), Modifier.widthIn(max = 140.dp), fontSize = 16.sp)
-            }
-            val progress = animatedStatProgress(ms.toFloat() /
-                placeDurations.first().millis.coerceAtLeast(1), "$range-place-$id", motion)
-            LinearProgressIndicator(progress = { progress },
-                Modifier.fillMaxWidth(), color = AppColors.current.chartPresence,
-                trackColor = MaterialTheme.colorScheme.surfaceVariant)
-        }
-        if (placeDurations.isNotEmpty()) Caption("停留最久的地点：${placeDurations.first().title}。")
-    }
-    Section("复盘")
-    Caption(when { failed > 0 -> "有 $failed 项任务未完成。回看目标是否过大、时间是否合适。"
-        review > 0 -> "先处理定位异常，核验后再判断本期完成情况。"
-        data.ended == 0 -> "完成第一个周期后，这里会提供复盘提示。"
-        else -> "本期已完成 $done 项任务。" })
-    Secondary("查看操作与异常记录") { nav.navigate("events") }
-    Secondary("导出统计 CSV") { activity.exportCsv() }
-    }
     }
 }
 
@@ -560,12 +574,12 @@ internal fun StatsOverviewCard(data: StatisticsReport, loading: Boolean, motion:
             Column(Modifier.weight(.42f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Column {
                     Caption("有效专注段")
-                    MetricValueText(listOf(MetricPart("${data.focusSegments}", "段")), fontSize = 21.sp)
+                    AnimatedMetricValue(listOf(MetricPart("${data.focusSegments}", "段")), motion, fontSize = 21.sp)
                 }
                 Column {
                     Caption("到期任务完成率")
-                    MetricValueText(listOf(MetricPart(if (data.verified == 0) "—"
-                        else "${data.done * 100 / data.verified}", if (data.verified == 0) "" else "%")), fontSize = 21.sp)
+                    AnimatedMetricValue(listOf(MetricPart(if (data.verified == 0) "—"
+                        else "${data.done * 100 / data.verified}", if (data.verified == 0) "" else "%")), motion, fontSize = 21.sp)
                 }
             }
         }
@@ -605,7 +619,10 @@ internal fun FocusDurationChart(rows: List<ChartRow>, selected: Int, range: Int,
     val maxMinutes = rows.maxOf { (it.focus / Rules.MINUTE).toInt() }.coerceAtLeast(1)
     val axisTop = ((maxMinutes + 29) / 30) * 30
     val animatedAxis = animateFloatAsState(axisTop.toFloat(),
-        tween(if (motion) AppMotion.statsBar else 0, easing = AppMotion.easing), label = "图表刻度范围")
+        progressSpec(motion), label = "图表刻度范围")
+    val axisState = remember(motion, axisTop, animatedAxis) {
+        derivedStateOf { if (motion) animatedAxis.value else axisTop.toFloat() }
+    }
     val focusColor = AppColors.current.chartFocus
     val selectedColor = MaterialTheme.colorScheme.primary
     val gridColor = MaterialTheme.colorScheme.outline.copy(alpha = .35f)
@@ -618,7 +635,7 @@ internal fun FocusDurationChart(rows: List<ChartRow>, selected: Int, range: Int,
         key(index) {
             val minutes = animateFloatAsState(
                 if (firstDraw) row.focus.toFloat() / Rules.MINUTE else 0f,
-                tween(if (motion) AppMotion.statsBar else 0, easing = AppMotion.easing), label = "${index}日专注时长")
+                progressSpec(motion), label = "${index}日专注时长")
             minutes
         }
     }
@@ -635,8 +652,8 @@ internal fun FocusDurationChart(rows: List<ChartRow>, selected: Int, range: Int,
         Column(Modifier.width(34.dp)) {
             Spacer(Modifier.height(34.dp))
             Column(Modifier.height(148.dp), verticalArrangement = Arrangement.SpaceBetween) {
-                ChartAxisLabel(animatedAxis, 1f)
-                ChartAxisLabel(animatedAxis, .5f)
+                ChartAxisLabel(axisState, 1f)
+                ChartAxisLabel(axisState, .5f)
                 Text("0", fontSize = 11.sp, style = AppTypography.number,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -673,8 +690,8 @@ internal fun FocusDurationChart(rows: List<ChartRow>, selected: Int, range: Int,
                 }
                 val slotPx = slot.toPx()
                 rows.forEachIndexed { index, row ->
-                    val minutes = barMinutes[index].value
-                    val height = (chartHeight * minutes / animatedAxis.value.coerceAtLeast(1f)).coerceAtLeast(if (minutes > 0) 3.dp.toPx() else 0f)
+                    val minutes = if (motion) barMinutes[index].value else row.focus.toFloat() / Rules.MINUTE
+                    val height = (chartHeight * minutes / axisState.value.coerceAtLeast(1f)).coerceAtLeast(if (minutes > 0) 3.dp.toPx() else 0f)
                     if (height > 0f) drawRoundRect(
                         color = androidx.compose.ui.graphics.lerp(focusColor, selectedColor, selectedStrength[index].value),
                         topLeft = Offset(index * slotPx + slotPx * .27f, chartHeight - height),
@@ -714,16 +731,15 @@ internal fun AnimatedStatDuration(actualMs: Long, motion: Boolean, label: String
         }
     }
     if (!motion) content(actualMinutes)
-    else AnimatedContent(actualMinutes, transitionSpec = { staggeredTextTransform(true) },
+    else AnimatedContent(actualMinutes, transitionSpec = { precisionNumberTransform(true) },
         label = label, content = { content(it) })
 }
 
 @Composable
-private fun animatedStatProgress(actual: Float, key: String, motion: Boolean): Float {
+private fun animatedStatProgress(actual: Float, key: String, motion: Boolean): State<Float> {
     val bounded = actual.coerceIn(0f, 1f)
     var target by rememberSaveable { mutableFloatStateOf(if (motion) 0f else bounded) }
     LaunchedEffect(key, bounded, motion) { target = bounded }
-    val shown by animateFloatAsState(target,
-        tween(if (motion) AppMotion.statsBar else 0, easing = AppMotion.easing), label = "统计进度")
-    return shown
+    val shown = animateFloatAsState(target, progressSpec(motion), label = "统计进度")
+    return remember(shown, motion, bounded) { derivedStateOf { if (motion) shown.value else bounded } }
 }

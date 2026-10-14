@@ -6,6 +6,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.*
+import androidx.compose.animation.core.spring
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -62,32 +66,37 @@ private fun usageTime(millis:Long):String {
     var selected by rememberSaveable(report?.start) { mutableStateOf(report?.apps?.filter { it.canLimit }?.take(5)?.joinToString("|"){it.pkg}.orEmpty()) }
     val chosen=selected.split('|').filter { it.isNotEmpty() }.toSet()
     val selectedApps=report?.apps?.filter {it.canLimit && it.pkg in chosen}.orEmpty()
-    Box(Modifier.fillMaxSize().imePadding()) {
-    Screen("应用使用与下周计划",onBack=onBack,
+    val usageState = rememberLazyListState()
+    val planState = rememberLazyListState()
+    val loadingUsageState = rememberLazyListState()
+    val haptics = LocalHapticFeedback.current
+    val data = report
+    val weekPlans = if (view == 1) UsageWeekPlans.plans(activity.db).filter {it.optLong("end")>System.currentTimeMillis()} else emptyList()
+    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).imePadding()) {
+    LazyScreen("应用使用与下周计划",onBack=onBack,state=if(view==1) planState else if(access && data==null) loadingUsageState else usageState,
         fixedContent={ Box(Modifier.fillMaxWidth().padding(horizontal=AppSpacing.page).padding(bottom=8.dp)) {
-            DraggableSegment(listOf("应用使用统计","制定下周计划"),view,activity.motionEnabled) {view=it}
+            DraggableSegment(listOf("过去7天使用","下周限额计划"),view,activity.motionEnabled) {view=it}
         } }, bottom={
             if(view==0 && selectedApps.isNotEmpty()) Row(Modifier.fillMaxWidth()
-                .background(MaterialTheme.colorScheme.surface).heightIn(min=48.dp)
+                .background(MaterialTheme.colorScheme.surface).heightIn(min=56.dp)
                 .padding(horizontal=AppSpacing.page),verticalAlignment=Alignment.CenterVertically) {
-                Text("已勾选 ${selectedApps.size} 个分析应用",Modifier.weight(1f),style=MaterialTheme.typography.labelMedium)
-                TextButton(onClick={view=1}) {Text("去生成下周计划 ›",style=MaterialTheme.typography.labelSmall)}
+                Text("已选 ${selectedApps.size} 个分析应用",Modifier.weight(1f),style=MaterialTheme.typography.labelMedium)
+                TextButton(onClick={view=1}) {Text("去制定下周计划 →",style=MaterialTheme.typography.labelSmall)}
             }
         }) {
-        val data=report
         if(view==0) {
-        Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+        item("usage-header", contentType="toolbar") { Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
             Text("过去 7 天",Modifier.weight(1f),style=MaterialTheme.typography.titleMedium)
             TextButton(onClick={reload++},enabled=access && !loading) { Text(if(loading) "更新中" else "刷新") }
-        }
-        if(!access) Panel {
+        } }
+        if(!access) item("permission", contentType="permission") { Panel {
             Text("查看平常的应用使用",style=MaterialTheme.typography.titleMedium)
             Caption("授权后可在本机查看前台时长与使用分布。尚未读取或上传任何使用记录。")
             Secondary("授权使用情况访问") { AndroidCompat.openSettings(activity,Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) }
-        }
-        if(error.isNotEmpty()) Caption(error)
+        } }
+        if(error.isNotEmpty()) item("error",contentType="error") { Caption(error) }
         if(data!=null) {
-            Caption("${data.dates.first()}—${data.dates.last()} · 更新于 ${timeText(data.end)}")
+            item("usage-overview",contentType="overview") { Column(verticalArrangement=Arrangement.spacedBy(8.dp)) { Caption("${data.dates.first()}—${data.dates.last()} · 更新于 ${timeText(data.end)}")
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                 listOf("总前台时长" to durationMetricParts(data.total),
                     "有记录日均" to durationMetricParts(data.total/data.availableDays.count { it }.coerceAtLeast(1)),
@@ -96,25 +105,34 @@ private fun usageTime(millis:Long):String {
                         Caption(label); MetricValueText(value, fontSize = 20.sp)
                     } }
             }
+            } }
+            item("usage-trend",contentType="chart") { Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
             Section("每日应用前台时长")
             UsageTrend(data)
             Caption("${data.availableDays.count { it }}/7 天有系统记录；— 表示未提供记录，不视为零使用。")
             Caption("单位：分钟 · 薄荷色为应用前台累计时长；多窗口可能同时累计。系统汇总可能延后，历史记录可能不完整。")
-            if(data.apps.isEmpty()) Panel {
+            } }
+            if(data.apps.isEmpty()) item("empty-usage",contentType="empty") { Panel {
                 Text("暂没有可分析的应用记录",style=MaterialTheme.typography.titleMedium)
                 Caption("正常使用手机后刷新；不把缺失记录当作零使用或生成虚构结论。")
-            } else {
+            } } else {
                 val top=data.apps.first()
-                Text("${top.label} 使用最多，占记录时长的 ${if(data.total>0) top.total*100/data.total else 0}%。",
+                item("app-list-header",contentType="heading") { Column(verticalArrangement=Arrangement.spacedBy(8.dp)) { Text("${top.label} 使用最多，占记录时长的 ${if(data.total>0) top.total*100/data.total else 0}%。",
                     style=MaterialTheme.typography.bodyMedium)
                 Section("应用分布 · 勾选用于分析的应用")
+                } }
                 val visible=if(showAll) data.apps else data.apps.take(10)
-                visible.forEach { app ->
+                items(visible,key={it.pkg},contentType={"usage-app"}) { app ->
                     val onSelectionChange: (Boolean) -> Unit = { checked ->
                         if(checked && chosen.size>=12) activity.toast("最多分析 12 个应用")
-                        else selected=(if(checked) chosen+app.pkg else chosen-app.pkg).joinToString("|")
+                        else {
+                            selected=(if(checked) chosen+app.pkg else chosen-app.pkg).joinToString("|")
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        }
                     }
                     Row(Modifier.fillMaxWidth().heightIn(min=64.dp)
+                        .then(if(activity.motionEnabled) Modifier.animateItem(fadeInSpec=null,fadeOutSpec=null,
+                            placementSpec=spring(dampingRatio=.85f,stiffness=520f)) else Modifier)
                         .toggleable(value=app.pkg in chosen,enabled=app.canLimit,role=Role.Checkbox,
                             interactionSource=remember { MutableInteractionSource() },indication=null,
                             onValueChange=onSelectionChange),verticalAlignment=Alignment.CenterVertically) {
@@ -125,17 +143,19 @@ private fun usageTime(millis:Long):String {
                     MetricValueText(durationMetricParts(app.total),
                         Modifier.widthIn(max = 108.dp), fontSize = 16.sp)
                 } }
-                if(data.apps.size>10) TextButton(onClick={showAll=!showAll}) { Text(if(showAll) "收起应用列表" else "查看全部 ${data.apps.size} 个应用") }
+                if(data.apps.size>10) item("show-all",contentType="action") { TextButton(onClick={showAll=!showAll}) { Text(if(showAll) "收起应用列表" else "查看全部 ${data.apps.size} 个应用") } }
             }
-        } else if(loading) Caption("正在本机整理使用记录…")
+        } else if(loading) item("loading",contentType="loading") { Caption("正在本机整理使用记录…") }
         } else {
+        item("plan-actions",contentType="toolbar") { Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
         Caption("已勾选 ${selectedApps.size} 个分析应用")
         TextButton(onClick={view=0}) {Text("选择分析应用 ›")}
         Section("使用计划")
         Secondary("手动安排下周") {onPlan(0)}
-        val weekPlans=UsageWeekPlans.plans(activity.db).filter {it.optLong("end")>System.currentTimeMillis()}
         if(weekPlans.isEmpty()) Caption("还没有周计划。可手动安排，也可让 AI 根据使用记录给出建议。")
-        weekPlans.forEach { plan -> Panel {
+        } }
+        items(weekPlans,key={it.optLong("start")},contentType={"week-plan"}) { plan -> Panel(
+            if(activity.motionEnabled) Modifier.animateItem(placementSpec=spring(dampingRatio=.85f,stiffness=520f)) else Modifier) {
             val start=plan.optLong("start")
             val enabled=plan.optBoolean("enabled",true)
             Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
@@ -157,19 +177,21 @@ private fun usageTime(millis:Long):String {
                 TextButton(onClick={deletingWeek=start}) {Text("删除计划")}
             }
         } }
+        item("ai-config",contentType="form") { Column(verticalArrangement=Arrangement.spacedBy(12.dp)) {
         Section("AI 下周建议")
         Caption("DeepSeek V4.1 · 生成建议后可调整，确认后才启用；原有应用限额保留，重叠时执行更严格的限额。")
         Input("希望如何安排下一周",goal,{goal=it.take(600)})
         Secondary(if(keyConfigured) "DeepSeek 已配置 · 管理" else "配置 DeepSeek") { keySettings=true }
         GlassPrimaryButton(if(activity.dataOperation.isEmpty()) "生成下周建议" else "正在处理…",Modifier.fillMaxWidth(),
             enabled=data!=null && selectedApps.isNotEmpty() && keyConfigured && activity.dataOperation.isEmpty()) { sendConfirm=true }
-        if(draft!=null) Panel {
+        } }
+        if(draft!=null) item("draft",contentType="draft") { Panel {
             Text("上次分析 · ${timeText(draft.optLong("created"))}",style=MaterialTheme.typography.labelLarge)
             Text(draft.optString("summary"),style=MaterialTheme.typography.bodyMedium)
             if(draft.optLong("start")<=System.currentTimeMillis()) Caption("建议日期已过；可查看内容，启用前需要重新生成。")
             Secondary("查看并调整建议") { review=draft }
             TextButton(onClick={deletingDraft=draft},enabled=activity.dataOperation.isEmpty()) {Text("清除建议")}
-        }
+        } }
         }
     }
     }

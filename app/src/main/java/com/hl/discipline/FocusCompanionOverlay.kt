@@ -235,15 +235,17 @@ internal fun companionPhase(phase: String): String = when (phase) {
 }
 
 @Composable
-internal fun CompanionSettings(activity: ComposeMainActivity) {
+internal fun CompanionSettings(activity: ComposeMainActivity, compact: Boolean = false) {
     val revision = activity.revision
     val enabled = remember(revision) { activity.db.settings().optBoolean("companionEnabled") }
     val access = android.provider.Settings.canDrawOverlays(activity)
-    Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+    var detailsOpen by remember { mutableStateOf(false) }
+    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text("悬浮球", style = MaterialTheme.typography.bodyLarge)
-            Caption(if (enabled && !access) "需要系统悬浮窗授权" else "点按查看计划、计时与应用余额")
+            if (!compact) Caption(if (enabled && !access) "需要系统悬浮窗授权" else "点按查看计划、计时与应用余额")
         }
+        if (compact && enabled) TextButton(onClick = { detailsOpen = !detailsOpen }) { Text(if (detailsOpen) "收起" else "说明") }
         GlassSwitch(checked = enabled, modifier = Modifier.semantics {
             contentDescription = "启用悬浮球"
         }, onCheckedChange = { value ->
@@ -257,7 +259,7 @@ internal fun CompanionSettings(activity: ComposeMainActivity) {
                 android.net.Uri.parse("package:${activity.packageName}")))
         })
     }
-    if (enabled) {
+    if (enabled && (!compact || detailsOpen)) {
         val problem = AndroidCompat.serviceProblem(activity, FocusCompanionService::class.java)
         if (problem.isNotBlank()) Caption(problem)
         Caption("双击完全隐藏，不占用屏幕触控区域。点常驻通知恢复；也可在系统快捷开关中添加「自律悬浮球」。")

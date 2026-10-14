@@ -54,6 +54,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
@@ -158,6 +159,8 @@ internal fun SystemBars(activity: ComponentActivity) {
 }
 
 class ComposeMainActivity : ComponentActivity() {
+    // Display cache only; repository loading still runs on every entry/revision/range change.
+    internal val statisticsPresentation = mutableStateOf<StatisticsReport?>(null)
     companion object { @Volatile internal var visible = false }
     private val phaseReceiver = object : android.content.BroadcastReceiver() {
         override fun onReceive(context: android.content.Context?, intent: Intent?) { refresh() }
@@ -629,7 +632,7 @@ private fun MainScreen(activity: ComposeMainActivity, nav: NavHostController) {
     var navDragging by remember { mutableStateOf(false) }
     var navDragPosition by remember { mutableFloatStateOf(0f) }
     var navCandidate by remember { mutableIntStateOf(tabOrder.indexOf(tab).coerceAtLeast(0)) }
-    val tabTravelPx = with(LocalDensity.current) { AppMotion.tabTravel.roundToPx() }
+    val tabTravelPx = with(LocalDensity.current) { 12.dp.roundToPx() }
     val leaving = LocalTaskMotion.current?.visibility?.transition?.targetState == androidx.compose.animation.EnterExitState.PostExit
     val currentRoute = nav.currentBackStackEntryAsState().value?.destination?.route
     BackHandler(enabled = tab != "today" && currentRoute == "main") {
@@ -641,7 +644,8 @@ private fun MainScreen(activity: ComposeMainActivity, nav: NavHostController) {
     val timetableScroll = rememberScrollState()
     var timetableLifted by rememberSaveable { mutableStateOf(false) }
     val focusScroll = rememberScrollState()
-    val statsScroll = rememberScrollState()
+    val statsScroll = rememberLazyListState()
+    val statsReport = activity.statisticsPresentation
     val liftPx = with(LocalDensity.current) { 24.dp.roundToPx() }
     val tabStates = rememberSaveableStateHolder()
     val createPlanBounds = remember { mutableStateOf(Rect.Zero) }
@@ -733,33 +737,23 @@ private fun MainScreen(activity: ComposeMainActivity, nav: NavHostController) {
         }, containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets(0, 0, 0, 0)
     ) { padding ->
-        tabTransition.AnimatedContent(modifier = Modifier.fillMaxSize().padding(padding).clipToBounds(),
-            transitionSpec = {
-                val direction = if (tabOrder.indexOf(targetState) >= tabOrder.indexOf(initialState)) 1 else -1
-                // Header and report are one layer: no new report under the old title.
-                (fadeIn(tween(if (activity.motionEnabled) 190 else 0,
-                    delayMillis = if (activity.motionEnabled) 50 else 0, easing = AppMotion.easing)) +
-                    slideInHorizontally(tween(if (activity.motionEnabled) 190 else 0,
-                        delayMillis = if (activity.motionEnabled) 50 else 0,
-                        easing = AppMotion.easing)) { direction * tabTravelPx }) togetherWith
-                    (fadeOut(tween(if (activity.motionEnabled) 70 else 0,
-                        easing = androidx.compose.animation.core.FastOutLinearInEasing)) +
-                        slideOutHorizontally(tween(if (activity.motionEnabled) 70 else 0,
-                            easing = AppMotion.easing)) { -direction * tabTravelPx }) using null
-            }) { shownTab ->
+        val tabContent: @Composable (String) -> Unit = { shownTab ->
         tabStates.SaveableStateProvider(shownTab) {
             ScreenExitGuard(leaving || shownTab != tab) {
                 Box(Modifier.fillMaxSize()
                     .testTag("main-page-$shownTab").background(MaterialTheme.colorScheme.background)) {
-                Column(Modifier.fillMaxSize()) {
+                Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
                     val pageScroll = when (shownTab) {
                         "timetable" -> timetableScroll
                         "focus" -> focusScroll
-                        "stats" -> statsScroll
                         else -> if (todayRange == 0) todayScroll else weekScroll
                     }
                     val pageLifted by remember(shownTab, pageScroll, liftPx, timetableLifted) {
-                        derivedStateOf { if (shownTab == "timetable") timetableLifted else pageScroll.value > liftPx }
+                        derivedStateOf { when (shownTab) {
+                            "timetable" -> timetableLifted
+                            "stats" -> statsScroll.firstVisibleItemIndex > 0 || statsScroll.firstVisibleItemScrollOffset > liftPx
+                            else -> pageScroll.value > liftPx
+                        } }
                     }
                     ScrollChrome(pageLifted) {
                         Row(Modifier.fillMaxWidth().statusBarsPadding()
@@ -787,7 +781,7 @@ private fun MainScreen(activity: ComposeMainActivity, nav: NavHostController) {
                         when (shownTab) {
                             "timetable" -> TimetableScreen(activity) { timetableLifted = it }
                             "focus" -> FocusScreen(activity, nav, focusScroll)
-                             "stats" -> StatsScreen(activity, nav, statsScroll)
+                             "stats" -> StatsScreen(activity, nav, statsScroll, statsReport)
                             else -> TodayScreen(activity, nav, todayRange, todayScroll, weekScroll)
                         }
                     }
@@ -799,6 +793,22 @@ private fun MainScreen(activity: ComposeMainActivity, nav: NavHostController) {
                 }
             }
         }
+        }
+        Box(Modifier.fillMaxSize().padding(padding).background(MaterialTheme.colorScheme.background).clipToBounds()) {
+            if (!activity.motionEnabled) tabContent(tab)
+            else tabTransition.AnimatedContent(modifier = Modifier.fillMaxSize().clipToBounds(),
+            transitionSpec = {
+                val direction = if (tabOrder.indexOf(targetState) >= tabOrder.indexOf(initialState)) 1 else -1
+                // One opaque layer owns heading and content; delayed physics can be interrupted.
+                if (!activity.motionEnabled) (EnterTransition.None togetherWith ExitTransition.None) using null
+                else (fadeIn(tween(160, delayMillis = 45, easing = AppMotion.easing)) +
+                    slideInHorizontally(DelayedSpring(45, spring(dampingRatio = 1f, stiffness = 550f))) {
+                        direction * tabTravelPx
+                    }) togetherWith fadeOut(tween(65,
+                        easing = androidx.compose.animation.core.FastOutLinearInEasing)) using null
+            }) { shownTab ->
+                tabContent(shownTab)
+            }
         }
     }
     }
@@ -930,7 +940,7 @@ private fun TodayContent(activity: ComposeMainActivity, nav: NavHostController, 
         .then(if (heroId != null) Modifier.taskShared("card-${heroId}", navigationShared, bounds = true)
             .then(if (!navigationShared) Modifier.viewShared("task-${heroId}", AppShapes.glass) else Modifier)
             else Modifier)
-        .animateContentSize(tween(if (activity.motionEnabled) AppMotion.expand else 0, easing = AppMotion.easing))
+        .animateContentSize(expansionSpec(activity.motionEnabled))
     // Keep the material and boundary outside the changing content: one continuous shell.
     GlassTaskPanel(shell, compact = hero.task != null) {
         AnimatedContent(targetState = hero, contentKey = { it.key }, label = "首页主任务",
@@ -1196,6 +1206,7 @@ internal fun TaskCard(activity: ComposeMainActivity, nav: NavHostController, tas
     val modifier = Modifier.testTag("task-card-${visual.id}")
         .then(if (!embedded) Modifier.taskShared("card-${visual.id}", shared, bounds = true)
             .then(if (!shared) Modifier.viewShared("task-${visual.id}") else Modifier) else Modifier)
+        .then(if (!embedded) Modifier.animateContentSize(expansionSpec(activity.motionEnabled)) else Modifier)
         .pressableCard(shape = if (featured) AppShapes.glass else AppShapes.card,
             clipContent = !embedded,
             onClickLabel = "查看${visual.name}详情") { openDetail() }
@@ -1286,9 +1297,7 @@ internal fun TaskCard(activity: ComposeMainActivity, nav: NavHostController, tas
                 }
             }
         }
-        AnimatedVisibility(open,
-            enter = expandVertically(tween(if (activity.motionEnabled) AppMotion.expand else 0, easing = AppMotion.easing)) + fadeIn(tween(if (activity.motionEnabled) AppMotion.contentEnter else 0, easing = AppMotion.easing)),
-            exit = shrinkVertically(tween(if (activity.motionEnabled) AppMotion.collapse else 0, easing = AppMotion.easing)) + fadeOut(tween(if (activity.motionEnabled) AppMotion.contentExit else 0, easing = AppMotion.easing))) {
+        AnimatedVisibility(open, enter = EnterTransition.None, exit = ExitTransition.None) {
             ScreenExitGuard(!open, Modifier.fillMaxWidth()) {
             Column(Modifier.then(if (featured) Modifier.taskTransitionAccessory(shared) else Modifier),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1313,12 +1322,11 @@ internal fun TaskCard(activity: ComposeMainActivity, nav: NavHostController, tas
 @Composable
 private fun PlansPage(activity: ComposeMainActivity, nav: NavHostController) {
     val total = remember(activity.revision) { activity.db.all("plans").size }
-    Screen("管理计划", onBack = { nav.popBackStack() }, subtitle = "共 $total 项",
-        floatingActionButton = { CreatePlanAction { nav.navigate("form/new") } }) { PlansScreen(activity, nav) }
+    PlansScreen(activity, nav, total)
 }
 
 @Composable
-private fun PlansScreen(activity: ComposeMainActivity, nav: NavHostController) {
+private fun PlansScreen(activity: ComposeMainActivity, nav: NavHostController, total: Int) {
     val revision = activity.revision
     val taskTransitionId = LocalTaskTransitionId.current
     var filter by rememberSaveable { mutableIntStateOf(0) }
@@ -1338,8 +1346,27 @@ private fun PlansScreen(activity: ComposeMainActivity, nav: NavHostController) {
             exitingCurrent = null
         }
     }
-    DraggableSegment(listOf("全部", "进行中", "已完成"), filter, activity.motionEnabled) { filter = it }
     var placeMenu by remember { mutableStateOf(false) }
+    val visible = plans.filter { plan ->
+        val periods = instances.filter { it.optString("planId") == plan.optString("id") }
+        val completed = periods.isNotEmpty() && periods.none { it.optString("status") == "open" } &&
+            activity.done(periods.maxByOrNull { it.optLong("due") }!!)
+        (when (filter) {
+            1 -> !plan.optBoolean("archived") && periods.any { it.optString("status") == "open" }
+            2 -> completed
+            else -> true
+        }) &&
+            (selectedPlace.isEmpty() || plan.optString("place") == selectedPlace)
+    }.sortedWith(compareBy<JSONObject> { !it.optBoolean("pinned") }
+        .thenBy { it.optString("name") })
+    val presented = exitingPlan?.takeIf { leaving -> visible.none { it.optString("id") == leaving.optString("id") } }
+        ?.let { (visible + it).sortedWith(compareBy<JSONObject> { plan -> !plan.optBoolean("pinned") }
+            .thenBy { plan -> plan.optString("name") }) } ?: visible
+    LazyScreen("管理计划", onBack = { nav.popBackStack() }, subtitle = "共 $total 项",
+        floatingActionButton = { CreatePlanAction { nav.navigate("form/new") } }, fixedContent = {
+        Column(Modifier.fillMaxWidth().padding(horizontal = AppSpacing.page).padding(bottom = AppSpacing.xs),
+            verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
+    DraggableSegment(listOf("全部", "进行中", "已完成"), filter, activity.motionEnabled) { filter = it }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs),
         verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.weight(1f)) {
@@ -1358,30 +1385,20 @@ private fun PlansScreen(activity: ComposeMainActivity, nav: NavHostController) {
             Text("地图与地点")
         }
     }
-    val visible = plans.filter { plan ->
-        val periods = instances.filter { it.optString("planId") == plan.optString("id") }
-        val completed = periods.isNotEmpty() && periods.none { it.optString("status") == "open" } &&
-            activity.done(periods.maxByOrNull { it.optLong("due") }!!)
-        (when (filter) {
-            1 -> !plan.optBoolean("archived") && periods.any { it.optString("status") == "open" }
-            2 -> completed
-            else -> true
-        }) &&
-            (selectedPlace.isEmpty() || plan.optString("place") == selectedPlace)
-    }.sortedWith(compareBy<JSONObject> { !it.optBoolean("pinned") }
-        .thenBy { it.optString("name") })
-    if (visible.isEmpty() && exitingPlan == null) Panel {
+        }
+    }) {
+        if (visible.isEmpty() && exitingPlan == null) item("empty", contentType = "empty") {
+        Panel {
         Image(painterResource(R.drawable.empty_desk_mist), contentDescription = null,
             modifier = Modifier.fillMaxWidth().height(120.dp))
         Text(if (plans.isEmpty()) "暂无计划" else "没有符合条件的计划")
         Caption(if (plans.isEmpty()) "添加计划，设定完成条件与执行时间。" else "切换状态或地点筛选查看其他计划。")
         if (plans.isEmpty()) Primary("创建计划") { nav.navigate("form/new") }
     }
-    LookaheadScope {
-    val presented = exitingPlan?.takeIf { leaving -> visible.none { it.optString("id") == leaving.optString("id") } }
-        ?.let { (visible + it).sortedWith(compareBy<JSONObject> { plan -> !plan.optBoolean("pinned") }
-            .thenBy { plan -> plan.optString("name") }) } ?: visible
-    presented.forEach { plan ->
+        }
+    items(presented, key = { it.optString("id") }, contentType = { "plan" }) { plan ->
+    Box(if (activity.motionEnabled) Modifier.animateItem(fadeInSpec = null, fadeOutSpec = null,
+        placementSpec = spring(dampingRatio = .85f, stiffness = 520f)) else Modifier) {
         key(plan.optString("id")) {
         var expanded by rememberSaveable(plan.optString("id")) { mutableStateOf(false) }
         var deleteConfirm by remember { mutableStateOf(false) }
@@ -1405,9 +1422,7 @@ private fun PlansScreen(activity: ComposeMainActivity, nav: NavHostController) {
             enter = EnterTransition.None,
             exit = shrinkVertically(tween(if (activity.motionEnabled) AppMotion.collapse else 0, easing = AppMotion.easing)) +
                 fadeOut(tween(if (activity.motionEnabled) AppMotion.briefExit else 0, easing = AppMotion.easing))) {
-        Panel(Modifier.then(if (activity.motionEnabled) Modifier.animateBounds(
-            this@LookaheadScope, boundsTransform = planOrderBounds) else Modifier)
-            .graphicsLayer {
+        Panel(Modifier.animateContentSize(expansionSpec(activity.motionEnabled)).graphicsLayer {
                 if (activity.motionEnabled) {
                     translationY = -pinLift.value * 3.dp.toPx()
                 }
@@ -1441,11 +1456,7 @@ private fun PlansScreen(activity: ComposeMainActivity, nav: NavHostController) {
                 ProgressTrack(progress, "${plan.optString("name")}完成进度")
                 MetaPill("截止 ${timeText(current.optLong("due"))}")
             }
-            AnimatedVisibility(expanded,
-                enter = expandVertically(tween(if (activity.motionEnabled) AppMotion.expand else 0, easing = AppMotion.easing)) +
-                    fadeIn(tween(if (activity.motionEnabled) AppMotion.state else 0, easing = AppMotion.easing)),
-                exit = shrinkVertically(tween(if (activity.motionEnabled) AppMotion.collapse else 0, easing = AppMotion.easing)) +
-                    fadeOut(tween(if (activity.motionEnabled) AppMotion.outgoing else 0))) {
+            AnimatedVisibility(expanded, enter = EnterTransition.None, exit = ExitTransition.None) {
                 ScreenExitGuard(!expanded, Modifier.fillMaxWidth()) {
                 Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
                 TextButton(onClick = {
@@ -1480,7 +1491,7 @@ private fun PlansScreen(activity: ComposeMainActivity, nav: NavHostController) {
         }
     }
     }
-    Spacer(Modifier.height(88.dp))
+    }
 }
 
 @Composable
