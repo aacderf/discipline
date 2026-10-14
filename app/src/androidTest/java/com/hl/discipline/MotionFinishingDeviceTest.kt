@@ -23,6 +23,9 @@ import java.io.File
 class MotionFinishingDeviceTest {
     @get:Rule val rule = createAndroidComposeRule<ComposeMainActivity>()
 
+    private fun activeBack() = rule.onNode(hasContentDescription("返回") and
+        !hasAnyAncestor(SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.HideFromAccessibility)))
+
     @Before fun fixture() {
         check(Build.FINGERPRINT.contains("generic") || Build.FINGERPRINT.contains("sdk_gphone"))
         rule.runOnUiThread {
@@ -73,11 +76,11 @@ class MotionFinishingDeviceTest {
         rule.mainClock.advanceTimeBy(400)
         rule.onNodeWithText("精确定位").assertExists()
         frame("settings-back-cancelled")
-        rule.onNode(hasContentDescription("返回")).performClick()
+        activeBack().performClick()
         rule.mainClock.advanceTimeBy(400)
         rule.mainClock.autoAdvance = true
         assertEquals(y.value, rule.onNodeWithText("权限和后台运行").getUnclippedBoundsInRoot().top.value, 2f)
-        rule.onNode(hasContentDescription("返回")).performClick()
+        activeBack().performClick()
         rule.onNode(hasContentDescription("专注")).performClick()
         rule.onNodeWithTag("focus-app-limits").performScrollTo().performClick()
         rule.onNodeWithText("添加应用限额").assertExists()

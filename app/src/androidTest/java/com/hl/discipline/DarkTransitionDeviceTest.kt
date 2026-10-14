@@ -36,8 +36,17 @@ class DarkTransitionDeviceTest {
             rule.mainClock.advanceTimeBy(32)
             val bitmap = rule.onRoot().captureToImage().asAndroidBitmap()
             for (y in listOf(bitmap.height / 3, bitmap.height / 2, bitmap.height * 2 / 3)) {
-                val pixel = bitmap.getPixel(2, y)
-                assertTrue("$prefix frame $frame exposed a pale background", Color.red(pixel) < 60 && Color.green(pixel) < 60)
+                // A full-width slide can bring a dark card or mint action across the edge.
+                // Detect a neutral pale patch, not a single legitimate surface/text pixel.
+                var pale = 0
+                var total = 0
+                for (py in y - 6..y + 6) for (px in 0 until 12) {
+                    val pixel = bitmap.getPixel(px, py)
+                    val channels = listOf(Color.red(pixel), Color.green(pixel), Color.blue(pixel))
+                    if (channels.min() >= 120 && channels.max() - channels.min() < 32) pale++
+                    total++
+                }
+                assertTrue("$prefix frame $frame exposed a neutral pale background ($pale/$total)", pale < total * .85f)
             }
             if (frame == 2 || frame == 6) {
                 val file = File(rule.activity.getExternalFilesDir(null), "dark-transition-0.11.2/$prefix-$frame.png")

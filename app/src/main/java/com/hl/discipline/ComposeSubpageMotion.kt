@@ -46,7 +46,6 @@ internal fun SubpageTransition(
     val state = remember { SeekableTransitionState(page) }
     val transition = rememberTransition(state, label = "设置子页")
     var seeking by remember { mutableStateOf(false) }
-    val travel = with(LocalDensity.current) { AppMotion.pageTravel.roundToPx() }
 
     // Re-run after a gesture commits or cancels, even if its logical page has not changed.
     LaunchedEffect(page, motion, seeking) {
@@ -73,9 +72,9 @@ internal fun SubpageTransition(
         val returning = targetState == root
         val duration = if (motion) AppMotion.panel else 0
         (slideInHorizontally(tween(duration, easing = AppMotion.easing)) {
-                if (returning) -travel else travel
+                if (returning) -it / 4 else it
             } togetherWith slideOutHorizontally(tween(duration, easing = AppMotion.easing)) {
-                if (returning) travel / 2 else -travel / 2
+                if (returning) it else -it / 4
             }).apply { targetContentZIndex = if (returning) -1f else 1f } using null
     }) { shown ->
         ScreenExitGuard(shown != page || seeking, Modifier.fillMaxSize()

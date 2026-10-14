@@ -450,7 +450,6 @@ private fun DisciplineApp(activity: ComposeMainActivity) {
         onDispose { entry?.lifecycle?.removeObserver(observer) }
     }
     val snackbar = remember { SnackbarHostState() }
-    val pageTravelPx = with(LocalDensity.current) { AppMotion.pageTravel.roundToPx() }
     LaunchedEffect(activity) { for (message in activity.messages) snackbar.showSnackbar(message) }
     CompositionLocalProvider(LocalMotionEnabled provides activity.motionEnabled,
         LocalTaskTransitionId provides taskTransitionId) {
@@ -465,25 +464,25 @@ private fun DisciplineApp(activity: ComposeMainActivity) {
             val task = initialState.destination.route == "task/{id}" || targetState.destination.route == "task/{id}"
             if (!activity.motionEnabled) EnterTransition.None
             else if (task) fadeIn(tween(AppMotion.taskShared, easing = AppMotion.easing))
-            else slideInHorizontally(tween(AppMotion.pageEnter, easing = AppMotion.easing)) { pageTravelPx }
+            else slideInHorizontally(tween(AppMotion.pageEnter, easing = AppMotion.easing)) { it }
         },
         exitTransition = {
             val task = initialState.destination.route == "task/{id}" || targetState.destination.route == "task/{id}"
             if (!activity.motionEnabled) ExitTransition.None
             else if (task) fadeOut(tween(AppMotion.sharedContentExit, easing = AppMotion.easing))
-            else slideOutHorizontally(tween(AppMotion.pageExit, easing = AppMotion.easing)) { -pageTravelPx / 2 }
+            else slideOutHorizontally(tween(AppMotion.pageExit, easing = AppMotion.easing)) { -it / 4 }
         },
         popEnterTransition = {
             val task = initialState.destination.route == "task/{id}" || targetState.destination.route == "task/{id}"
             if (!activity.motionEnabled) EnterTransition.None
             else if (task) fadeIn(tween(AppMotion.taskShared, easing = AppMotion.easing))
-            else slideInHorizontally(tween(AppMotion.pageEnter, easing = AppMotion.easing)) { -pageTravelPx }
+            else slideInHorizontally(tween(AppMotion.pageEnter, easing = AppMotion.easing)) { -it / 4 }
         },
         popExitTransition = {
             val task = initialState.destination.route == "task/{id}" || targetState.destination.route == "task/{id}"
             if (!activity.motionEnabled) ExitTransition.None
             else if (task) fadeOut(tween(AppMotion.sharedContentExit, easing = AppMotion.easing))
-            else slideOutHorizontally(tween(AppMotion.pageExit, easing = AppMotion.easing)) { pageTravelPx / 2 }
+            else slideOutHorizontally(tween(AppMotion.pageExit, easing = AppMotion.easing)) { it }
         }) {
         composable("main") {
             CompositionLocalProvider(LocalTaskMotion provides TaskMotionScope(shared, this)) {
@@ -643,46 +642,13 @@ private fun MainScreen(activity: ComposeMainActivity, nav: NavHostController) {
     var timetableLifted by rememberSaveable { mutableStateOf(false) }
     val focusScroll = rememberScrollState()
     val statsScroll = rememberScrollState()
-    val activeScroll = when (tab) {
-        "timetable" -> timetableScroll
-        "focus" -> focusScroll
-        "stats" -> statsScroll
-        else -> if (todayRange == 0) todayScroll else weekScroll
-    }
     val liftPx = with(LocalDensity.current) { 24.dp.roundToPx() }
-    val lifted by remember(tab, activeScroll, liftPx, timetableLifted) {
-        derivedStateOf { if (tab == "timetable") timetableLifted else activeScroll.value > liftPx }
-    }
     val tabStates = rememberSaveableStateHolder()
     val createPlanBounds = remember { mutableStateOf(Rect.Zero) }
     // Position changes during press/transition are layout data, not a new screen state.
     CompositionLocalProvider(LocalCreatePlanBounds provides if (tab == "today") createPlanBounds else null) {
     ScreenExitGuard(leaving) {
     Scaffold(
-        topBar = {
-            ScrollChrome(lifted) {
-            Row(Modifier.fillMaxWidth().statusBarsPadding().padding(start = 24.dp, end = 12.dp, top = 10.dp, bottom = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                tabTransition.AnimatedContent(modifier = Modifier.weight(1f).clipToBounds(),
-                    transitionSpec = {
-                        staggeredTextTransform(activity.motionEnabled)
-                    }) { shown ->
-                    ScreenExitGuard(shown != tab, Modifier.wrapContentSize(Alignment.CenterStart)) {
-                        if (shown == "today") {
-                            ModeSwitch(if (todayRange == 0) "今天" else "这周",
-                                if (todayRange == 0) "这周" else "今天", MaterialTheme.typography.headlineMedium,
-                                Modifier.testTag("today-range-switch")) { todayRange = 1 - todayRange }
-                        } else Text(titles[shown].orEmpty(), Modifier.heightIn(min = 48.dp).wrapContentHeight()
-                            .semantics { heading() },
-                            style = MaterialTheme.typography.headlineMedium)
-                    }
-                }
-                GlassIconButton("设置", onClick = { nav.navigate("settings") }) {
-                    Icon(painterResource(R.drawable.ic_settings), contentDescription = null, modifier = Modifier.size(AppIconSize.action))
-                }
-            }
-            }
-        },
         bottomBar = {
             Box(Modifier.navigationBarsPadding()) {
             BoxWithConstraints(Modifier.fillMaxWidth()
@@ -764,33 +730,59 @@ private fun MainScreen(activity: ComposeMainActivity, nav: NavHostController) {
             }
             }
             }
-        }, floatingActionButton = {
-            if (tab == "today") CreatePlanAction(Modifier.onGloballyPositioned {
-                createPlanBounds.value = it.boundsInWindow()
-            }) { nav.navigate("form/new") }
         }, containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets(0, 0, 0, 0)
     ) { padding ->
         tabTransition.AnimatedContent(modifier = Modifier.fillMaxSize().padding(padding).clipToBounds(),
             transitionSpec = {
                 val direction = if (tabOrder.indexOf(targetState) >= tabOrder.indexOf(initialState)) 1 else -1
-                (fadeIn(tween(if (activity.motionEnabled) AppMotion.tabEnter else 0, easing = AppMotion.easing), initialAlpha = .92f) +
-                    slideInHorizontally(tween(if (activity.motionEnabled) AppMotion.tabEnter else 0,
+                // Header and report are one layer: no new report under the old title.
+                (fadeIn(tween(if (activity.motionEnabled) 190 else 0,
+                    delayMillis = if (activity.motionEnabled) 50 else 0, easing = AppMotion.easing)) +
+                    slideInHorizontally(tween(if (activity.motionEnabled) 190 else 0,
+                        delayMillis = if (activity.motionEnabled) 50 else 0,
                         easing = AppMotion.easing)) { direction * tabTravelPx }) togetherWith
-                    (fadeOut(tween(if (activity.motionEnabled) AppMotion.outgoing else 0, easing = AppMotion.easing)) +
-                        slideOutHorizontally(tween(if (activity.motionEnabled) AppMotion.tabEnter else 0,
-                            easing = AppMotion.easing)) { -direction * tabTravelPx })
+                    (fadeOut(tween(if (activity.motionEnabled) 70 else 0,
+                        easing = androidx.compose.animation.core.FastOutLinearInEasing)) +
+                        slideOutHorizontally(tween(if (activity.motionEnabled) 70 else 0,
+                            easing = AppMotion.easing)) { -direction * tabTravelPx }) using null
             }) { shownTab ->
         tabStates.SaveableStateProvider(shownTab) {
             ScreenExitGuard(leaving || shownTab != tab) {
-                Column(Modifier.fillMaxSize()
-                    .background(MaterialTheme.colorScheme.background)
-                     .then(if (shownTab == "today" || shownTab == "timetable" || shownTab == "focus" || shownTab == "stats") Modifier else Modifier.verticalScroll(when (shownTab) {
+                Box(Modifier.fillMaxSize()
+                    .testTag("main-page-$shownTab").background(MaterialTheme.colorScheme.background)) {
+                Column(Modifier.fillMaxSize()) {
+                    val pageScroll = when (shownTab) {
                         "timetable" -> timetableScroll
                         "focus" -> focusScroll
                         "stats" -> statsScroll
-                        else -> todayScroll
-                    })).then(if (shownTab == "focus") Modifier else Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp)),
+                        else -> if (todayRange == 0) todayScroll else weekScroll
+                    }
+                    val pageLifted by remember(shownTab, pageScroll, liftPx, timetableLifted) {
+                        derivedStateOf { if (shownTab == "timetable") timetableLifted else pageScroll.value > liftPx }
+                    }
+                    ScrollChrome(pageLifted) {
+                        Row(Modifier.fillMaxWidth().statusBarsPadding()
+                            .padding(start = 24.dp, end = 12.dp, top = 10.dp, bottom = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.weight(1f).wrapContentSize(Alignment.CenterStart)) {
+                                if (shownTab == "today") {
+                                    ModeSwitch(if (todayRange == 0) "今天" else "这周",
+                                        if (todayRange == 0) "这周" else "今天", MaterialTheme.typography.headlineMedium,
+                                        Modifier.testTag("today-range-switch")) { todayRange = 1 - todayRange }
+                                } else Text(titles[shownTab].orEmpty(), Modifier.heightIn(min = 48.dp)
+                                    .wrapContentHeight().testTag("main-page-title-$shownTab")
+                                    .semantics { heading() }, style = MaterialTheme.typography.headlineMedium)
+                            }
+                            GlassIconButton("设置", onClick = { nav.navigate("settings") }) {
+                                Icon(painterResource(R.drawable.ic_settings), contentDescription = null,
+                                    modifier = Modifier.size(AppIconSize.action))
+                            }
+                        }
+                    }
+                    Column(Modifier.weight(1f).fillMaxWidth()
+                        .then(if (shownTab == "focus") Modifier else Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp)),
                         verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         when (shownTab) {
                             "timetable" -> TimetableScreen(activity) { timetableLifted = it }
@@ -799,6 +791,12 @@ private fun MainScreen(activity: ComposeMainActivity, nav: NavHostController) {
                             else -> TodayScreen(activity, nav, todayRange, todayScroll, weekScroll)
                         }
                     }
+                }
+                if (shownTab == "today") CreatePlanAction(Modifier.align(Alignment.BottomEnd)
+                    .padding(end = 16.dp, bottom = 16.dp).onGloballyPositioned {
+                        createPlanBounds.value = it.boundsInWindow()
+                    }) { nav.navigate("form/new") }
+                }
             }
         }
         }
