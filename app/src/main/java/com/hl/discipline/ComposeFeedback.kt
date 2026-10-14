@@ -13,6 +13,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathMeasure
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
@@ -58,17 +62,22 @@ internal fun DisclosureMark(expanded: Boolean, modifier: Modifier = Modifier) {
 /** Finite check stroke. Already completed items mount at the final shape. */
 @Composable
 internal fun CompletionStroke(fraction: () -> Float, ink: Color, modifier: Modifier = Modifier) {
-    Canvas(modifier.clearAndSetSemantics {}) {
-        val p = fraction().coerceIn(0f, 1f)
-        val start = Offset(size.width * .23f, size.height * .51f)
-        val bend = Offset(size.width * .43f, size.height * .70f)
-        val end = Offset(size.width * .79f, size.height * .31f)
-        val firstShare = .34f
-        if (p > 0f) drawLine(ink, start,
-            start + (bend - start) * (p / firstShare).coerceAtMost(1f),
-            strokeWidth = 2.2.dp.toPx(), cap = StrokeCap.Round)
-        if (p > firstShare) drawLine(ink, bend,
-            bend + (end - bend) * ((p - firstShare) / (1f - firstShare)),
-            strokeWidth = 2.2.dp.toPx(), cap = StrokeCap.Round)
-    }
+    androidx.compose.foundation.layout.Spacer(modifier.clearAndSetSemantics {}.drawWithCache {
+        val check = Path().apply {
+            moveTo(size.width * .23f, size.height * .51f)
+            lineTo(size.width * .43f, size.height * .70f)
+            lineTo(size.width * .79f, size.height * .31f)
+        }
+        val measure = PathMeasure().apply { setPath(check, false) }
+        val part = Path()
+        onDrawBehind {
+            part.reset()
+            val p = fraction().coerceIn(0f, 1f)
+            if (p > 0f) {
+                measure.getSegment(0f, measure.length * p, part, true)
+                drawPath(part, ink, style = Stroke(width = 2.2.dp.toPx(), cap = StrokeCap.Round,
+                    join = androidx.compose.ui.graphics.StrokeJoin.Round))
+            }
+        }
+    })
 }

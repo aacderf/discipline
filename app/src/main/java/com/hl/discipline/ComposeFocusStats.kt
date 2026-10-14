@@ -126,6 +126,8 @@ internal fun FocusScreen(activity: ComposeMainActivity, nav: NavHostController, 
             showingCompletion = false
         } else if (phase != "break") showingCompletion = false
     }
+    val turnToken = rememberFocusTurn(focus?.let { FocusTurnIdentity(it.optLong("start"), it.optInt("cycle", 1)) },
+        phase, motion) { haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove) }
     val presentation = focusPresentation(focus, showingCompletion)
     val activeTask = (if (focus != null) focus.optString("task") else taskId)
         .takeIf { it.isNotEmpty() }?.let { activity.db.one("instances", it) }
@@ -230,13 +232,13 @@ internal fun FocusScreen(activity: ComposeMainActivity, nav: NavHostController, 
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
                             HourglassInstrument({ ring.value }, presentation.hourglass, compact, motion, richMotion,
-                                "本轮进度 ${(fraction * 100).toInt()}%", instrumentSize = 64.dp)
+                                "本轮进度 ${(fraction * 100).toInt()}%", instrumentSize = 64.dp, turnToken = turnToken)
                             Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally, content = timeReadout)
                         }
                     } else Column(Modifier.align(Alignment.CenterHorizontally), horizontalAlignment = Alignment.CenterHorizontally) {
                         HourglassInstrument({ ring.value }, presentation.hourglass, compact, motion, richMotion,
                             "${if (forwardWork) "已专注" else "本轮"}进度 ${(fraction * 100).toInt()}%",
-                            instrumentSize = if (compactWindow) 104.dp else if (compact) 184.dp else 212.dp)
+                            instrumentSize = if (compactWindow) 104.dp else if (compact) 184.dp else 212.dp, turnToken = turnToken)
                         timeReadout()
                     }
                     val expected = when {
@@ -426,7 +428,14 @@ internal fun StatsScreen(activity: ComposeMainActivity, nav: NavHostController,
         LazyColumn(Modifier.weight(1f).fillMaxWidth().background(MaterialTheme.colorScheme.background).testTag("stats-list"),
             state = if (data == null) loadingScroll else scrollState, contentPadding = PaddingValues(bottom = AppSpacing.lg),
             verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
-            item("usage-entry", contentType = "action") { Secondary("应用使用与下周计划") { nav.navigate("usage-insights") } }
+            item("usage-entry", contentType = "action") {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ControlEntryCard("每日/每周应用限额", "管理可用时长", R.drawable.ic_shield,
+                        Modifier.weight(1f).testTag("stats-app-limits")) { nav.navigate("app-limits") }
+                    ControlEntryCard("应用使用与下周计划", "查看分布与安排", R.drawable.ic_nav_stats,
+                        Modifier.weight(1f)) { nav.navigate("usage-insights") }
+                }
+            }
             if (error.isNotEmpty()) item("error", contentType = "error") {
                 Column { Caption(error); Secondary("重新整理统计") { retry++ } }
             }

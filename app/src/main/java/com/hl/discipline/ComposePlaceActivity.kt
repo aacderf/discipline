@@ -86,6 +86,8 @@ class ComposePlaceActivity : ComponentActivity() {
     private var dirty by mutableStateOf(false)
     private var saved = false
     private var name by mutableStateOf("")
+    private var closedBoundary by mutableStateOf<List<Offset>>(emptyList())
+    private var boundaryPulse by mutableIntStateOf(0)
     private var status by mutableStateOf("搜索或移动地图，找到要圈选的地点")
     private var searching by mutableStateOf(false)
     private var resultItems by mutableStateOf<List<PoiItem>>(emptyList())
@@ -172,7 +174,7 @@ class ComposePlaceActivity : ComponentActivity() {
                 if (index >= 0 && !drawing) { selectVertex(index); true } else false
             }
             a.setOnCameraChangeListener(object : AMap.OnCameraChangeListener {
-                override fun onCameraChange(position: CameraPosition) {}
+                override fun onCameraChange(position: CameraPosition) { closedBoundary = emptyList() }
                 override fun onCameraChangeFinish(position: CameraPosition) {
                     if (step == 0 && !drawing) {
                         centerLat = position.target.latitude; centerLng = position.target.longitude
@@ -294,6 +296,7 @@ class ComposePlaceActivity : ComponentActivity() {
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
             mapView?.let { view -> AndroidView(factory = { view }, modifier = Modifier.fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)) }
+            BoundarySnapFeedback(closedBoundary, boundaryPulse, motionEnabled, Modifier.matchParentSize())
             Box(Modifier.fillMaxWidth().align(androidx.compose.ui.Alignment.TopCenter)
                 .height(WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 24.dp)
                 .background(Brush.verticalGradient(listOf(
@@ -608,10 +611,14 @@ class ComposePlaceActivity : ComponentActivity() {
             "范围较窄，定位精度不足时不会累计到场；可拖动圆点微调"
         else "可拖动边界上的圆点微调，再确认范围"
         renderShape()
+        closedBoundary = points.mapNotNull { point -> map?.projection?.toScreenLocation(point)
+            ?.let { Offset(it.x.toFloat(), it.y.toFloat()) } }
+        boundaryPulse++
     }
     private fun corners(bounds: Rules.Rect) = listOf(LatLng(bounds.north, bounds.west), LatLng(bounds.north, bounds.east),
         LatLng(bounds.south, bounds.east), LatLng(bounds.south, bounds.west))
     private fun clearOverlay() {
+        closedBoundary = emptyList()
         traceLine?.remove(); traceLine = null
         polygon?.remove(); polygon = null
         handles.forEach { it.remove() }; handles.clear()

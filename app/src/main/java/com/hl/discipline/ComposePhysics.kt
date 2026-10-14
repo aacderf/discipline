@@ -12,8 +12,8 @@ internal fun progressSpec(motion: Boolean): AnimationSpec<Float> =
 
 internal fun precisionNumberTransform(motion: Boolean): ContentTransform =
     if (!motion) EnterTransition.None togetherWith ExitTransition.None
-    else (slideInVertically(tween(160, delayMillis = 40, easing = AppMotion.easing)) { it / 2 } +
-        fadeIn(tween(160, delayMillis = 40, easing = AppMotion.easing))) togetherWith
+    else (slideInVertically(DelayedSpring(40, spring(dampingRatio = .8f, stiffness = 450f))) { it / 2 } +
+        fadeIn(tween(140, delayMillis = 40, easing = AppMotion.easing))) togetherWith
         (slideOutVertically(tween(80, easing = AppMotion.easing)) { -it / 2 } + fadeOut(tween(80)))
 
 /** Spring itself has no delayMillis. Shift its finite clock instead of replacing its physics. */

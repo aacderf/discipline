@@ -16,8 +16,8 @@ android {
         applicationId 'com.hl.discipline'
         minSdk 26
         targetSdk 36
-        versionCode 51
-        versionName '0.12.6'
+        versionCode 52
+        versionName '0.12.7'
         manifestPlaceholders = [AMAP_KEY: amapKey]
         buildConfigField 'boolean', 'AMAP_CONFIGURED', amapKey ? 'true' : 'false'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'

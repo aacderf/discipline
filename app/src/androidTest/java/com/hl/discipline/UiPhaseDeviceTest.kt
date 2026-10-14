@@ -238,10 +238,9 @@ class UiPhaseDeviceTest {
     @Test fun usagePlansAreReachableWithoutScrollingTheApplicationList() {
         rule.runOnUiThread { rule.activity.selectedTab = "stats" }
         rule.onNodeWithText("应用使用与下周计划").performClick()
-        rule.onNodeWithText("下周限额计划", useUnmergedTree = true).performClick()
         rule.onNodeWithText("手动安排下周").assertIsDisplayed()
-        rule.onNodeWithText("选择分析应用 ›").performClick()
-        rule.onNodeWithText("过去 7 天").assertIsDisplayed()
+        rule.onNodeWithText("展开调整 ▾").performClick()
+        rule.onNodeWithText("分析应用").assertIsDisplayed()
         frame("usage-direct-switch")
     }
 

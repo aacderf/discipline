@@ -42,6 +42,7 @@ internal fun AppLimitsScreen(activity: ComposeMainActivity, onBack: () -> Unit,
     val fallbackRunning = heartbeat != null && heartbeat.optLong("time") > 0 &&
         System.currentTimeMillis() - heartbeat.optLong("time") < 15_000 &&
         heartbeat.optString("error").isEmpty()
+    val overview by rememberLimitOverview(activity)
     var fallbackConfirm by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<JSONObject?>(null) }
     var picking by remember { mutableStateOf(false) }
@@ -102,11 +103,9 @@ internal fun AppLimitsScreen(activity: ComposeMainActivity, onBack: () -> Unit,
             val pkg = limit.optString("package")
             key(pkg) {
                 val appLabel = appNames(activity, JSONArray().put(pkg))
-                val usage by produceState<AppUsageLimits.Usage?>(null, pkg, revision, access) {
-                    value = if (access) withContext(Dispatchers.IO) {
-                        AppUsageLimits.read(activity, pkg, System.currentTimeMillis())
-                    } else null
-                }
+                val status = overview?.rows?.firstOrNull { it.packageName == pkg }
+                val usage = status?.usage
+                val enabled = limit.optBoolean("enabled", true)
                 Panel {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text(appLabel, style = MaterialTheme.typography.titleMedium,
@@ -126,7 +125,17 @@ internal fun AppLimitsScreen(activity: ComposeMainActivity, onBack: () -> Unit,
                         val week = (usage!!.weekMillis / Rules.MINUTE).toInt()
                         Caption("已使用：今日 $today 分钟 · 本周 $week 分钟")
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        val label = when {
+                            !enabled -> "已停用"
+                            !access -> "待授权"
+                            status?.unlocked == true -> "应急解锁中"
+                            status?.exhausted == true -> if (overview?.mode == "未运行") "额度用尽 · 待拦截" else "已锁止"
+                            else -> "已设限"
+                        }
+                        LimitGateBadge(label, enabled && access && status?.unlocked != true, ready = overview != null)
+                        Spacer(Modifier.weight(1f))
                         Secondary("调整") { editing = limit }
                         Secondary("删除") { deletePackage = pkg }
                     }

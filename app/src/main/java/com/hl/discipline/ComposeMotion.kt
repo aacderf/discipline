@@ -213,7 +213,7 @@ internal fun JSONObject.visual(): TaskVisual {
 
 @Composable
 internal fun TaskTypeGlyph(metric: String, modifier: Modifier = Modifier, size: Dp = 56.dp,
-                           completed: Boolean = false) {
+                           completed: Boolean = false, completionFraction: (() -> Float)? = null) {
     val icon = when (metric) {
         "check" -> R.drawable.ic_task_list
         "count" -> R.drawable.ic_target
@@ -228,8 +228,8 @@ internal fun TaskTypeGlyph(metric: String, modifier: Modifier = Modifier, size: 
     Surface(modifier, shape = CircleShape, color = MaterialTheme.colorScheme.secondaryContainer) {
         Box(Modifier.size(size), contentAlignment = androidx.compose.ui.Alignment.Center) {
             Icon(painterResource(icon), contentDescription = null, tint = ink,
-                modifier = Modifier.size(size * .54f).graphicsLayer { alpha = 1f - stroke.value })
-            CompletionStroke({ stroke.value }, ink, Modifier.size(size * .62f))
+                modifier = Modifier.size(size * .54f).graphicsLayer { alpha = 1f - (completionFraction?.invoke() ?: stroke.value) })
+            CompletionStroke({ completionFraction?.invoke() ?: stroke.value }, ink, Modifier.size(size * .62f))
         }
     }
 }

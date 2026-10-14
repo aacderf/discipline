@@ -877,6 +877,7 @@ private fun TodayContent(activity: ComposeMainActivity, nav: NavHostController, 
             Text("管理计划 ›")
         }
     }
+    AppLimitStatusBar(activity) { nav.navigate("app-limits") }
     if (range == 1) {
         WeeklyPlansScreen(activity, nav)
         return
@@ -892,11 +893,22 @@ private fun TodayContent(activity: ComposeMainActivity, nav: NavHostController, 
     val completed = tasks.filter { activity.done(it) && !it.optBoolean("dismissedToday") }
     val settled = tasks.filter { !activity.done(it) && it.optString("status") !in listOf("open", "review") }
     val next = active.firstOrNull()
-    val hero = HomeHero(when {
+    val actualHero = HomeHero(when {
         tasks.isEmpty() -> "empty"
         next == null -> if (settled.isEmpty()) "complete" else "settled"
         else -> "task:${next.optString("id")}"
     }, next, done)
+    // Retain only the successful outgoing card long enough for its ink stroke; data settles immediately.
+    var stampedHero by remember { mutableStateOf<HomeHero?>(null) }
+    LaunchedEffect(stampedHero?.key, activity.motionEnabled) {
+        if (stampedHero != null) {
+            if (activity.motionEnabled) kotlinx.coroutines.delay(220)
+            stampedHero = null
+        }
+    }
+    val hero = if (activity.motionEnabled) stampedHero ?: actualHero else actualHero
+    var heroStampEvent by remember { mutableIntStateOf(0) }
+    val heroStamp = rememberCompletionStamp(heroStampEvent, heroStampEvent > 0, activity.motionEnabled)
     var completedOpen by rememberSaveable { mutableStateOf(false) }
     var recentlyDismissed by remember { mutableStateOf<JSONObject?>(null) }
     val glyphPositions = remember { mutableMapOf<String, Offset>() }
@@ -942,7 +954,7 @@ private fun TodayContent(activity: ComposeMainActivity, nav: NavHostController, 
             else Modifier)
         .animateContentSize(expansionSpec(activity.motionEnabled))
     // Keep the material and boundary outside the changing content: one continuous shell.
-    GlassTaskPanel(shell, compact = hero.task != null) {
+    GlassTaskPanel(shell.completionScale(heroStamp, activity.motionEnabled), compact = hero.task != null) {
         AnimatedContent(targetState = hero, contentKey = { it.key }, label = "首页主任务",
             transitionSpec = {
                 val travel = if (activity.motionEnabled) AppMotion.expand else 0
@@ -962,7 +974,11 @@ private fun TodayContent(activity: ComposeMainActivity, nav: NavHostController, 
                             modifier = Modifier.fillMaxWidth().height(96.dp))
                     }
                     shown.task != null -> TaskCard(activity, nav, shown.task, true,
-                        onCompleted = { completeHandoff(shown.task.optString("id")) },
+                        onCompleted = {
+                            if (activity.motionEnabled) stampedHero = shown
+                            heroStampEvent++
+                            completeHandoff(shown.task.optString("id"))
+                        },
                         onGlyphPosition = { glyphPositions[shown.task.optString("id")] = it }, embedded = true)
                     else -> {
                         Text(if (shown.key == "complete") "今日任务已完成" else "今日任务已到期",
@@ -1189,6 +1205,14 @@ internal fun TaskCard(activity: ComposeMainActivity, nav: NavHostController, tas
     val visual = task.visual()
     val taskTransitionId = LocalTaskTransitionId.current
     var locallyCompleted by remember(visual.id) { mutableStateOf(false) }
+    var completionEvent by remember(visual.id) { mutableIntStateOf(0) }
+    val completedNow = activity.done(task) || locallyCompleted
+    val displayedTask = remember(task, activity.revision, locallyCompleted) {
+        if (locallyCompleted) activity.db.one("instances", visual.id) ?: task else task
+    }
+    val stamp = rememberCompletionStamp(completionEvent, completedNow, activity.motionEnabled)
+    var titleLayout by remember(visual.id) { mutableStateOf<androidx.compose.ui.text.TextLayoutResult?>(null) }
+    val completionInk = MaterialTheme.colorScheme.primary
     var open by rememberSaveable(visual.id) { mutableStateOf(featured) }
     val headerBounds = remember(visual.id) { mutableStateOf(Rect.Zero) }
     val fabBounds = LocalCreatePlanBounds.current
@@ -1204,6 +1228,7 @@ internal fun TaskCard(activity: ComposeMainActivity, nav: NavHostController, tas
         nav.navigate("task/${visual.id}")
     }
     val modifier = Modifier.testTag("task-card-${visual.id}")
+        .then(if (!embedded) Modifier.completionScale(stamp, activity.motionEnabled) else Modifier)
         .then(if (!embedded) Modifier.taskShared("card-${visual.id}", shared, bounds = true)
             .then(if (!shared) Modifier.viewShared("task-${visual.id}") else Modifier) else Modifier)
         .then(if (!embedded) Modifier.animateContentSize(expansionSpec(activity.motionEnabled)) else Modifier)
@@ -1220,18 +1245,21 @@ internal fun TaskCard(activity: ComposeMainActivity, nav: NavHostController, tas
             },
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically) {
-            TaskTypeGlyph(visual.metric, Modifier.taskShared("glyph-${visual.id}", shared)
+            TaskTypeGlyph(visual.metric, Modifier.graphicsLayer {
+                scaleX = if (activity.motionEnabled) stamp.glyphScale.value else 1f; scaleY = scaleX
+            }.taskShared("glyph-${visual.id}", shared)
                 .onGloballyPositioned { coordinates ->
                     onGlyphPosition?.invoke(coordinates.positionInRoot() + Offset(
                         coordinates.size.width / 2f, coordinates.size.height / 2f))
                 },
-                if (featured) 44.dp else 42.dp, activity.done(task) || locallyCompleted)
-            Text(visual.name, Modifier.weight(1f).taskShared("title-${visual.id}", shared, bounds = true),
+                if (featured) 44.dp else 42.dp, completedNow,
+                completionFraction = { if (activity.motionEnabled) stamp.stroke.value else if (completedNow) 1f else 0f })
+            Text(visual.name, Modifier.weight(1f).taskShared("title-${visual.id}", shared, bounds = true)
+                .completionInk({ titleLayout }, { if (activity.motionEnabled) stamp.stroke.value else if (completedNow) 1f else 0f }, completionInk),
                 style = MaterialTheme.typography.titleMedium,
                 fontSize = if (featured) 18.sp else 17.sp,
                 fontWeight = if (featured) FontWeight.Bold else FontWeight.SemiBold,
-                textDecoration = if (activity.done(task) || locallyCompleted) androidx.compose.ui.text.style.TextDecoration.LineThrough
-                    else null)
+                onTextLayout = { titleLayout = it })
             if (open && task.optString("status") == "open") {
                 val pinned = activity.db.one("plans", task.optString("planId"))?.optBoolean("pinned") == true
                 TextButton(onClick = { activity.togglePlanPin(task.optString("planId")) },
@@ -1247,7 +1275,7 @@ internal fun TaskCard(activity: ComposeMainActivity, nav: NavHostController, tas
             }
         }
         val status = if (locallyCompleted) "已完成" else activity.status(task)
-        val summary = status to activity.amount(task)
+        val summary = status to activity.amount(displayedTask)
         AnimatedContent(targetState = summary, label = "任务状态", transitionSpec = {
             fadeIn(tween(if (activity.motionEnabled) AppMotion.contentEnter else 0, easing = AppMotion.easing)) togetherWith
                 fadeOut(tween(if (activity.motionEnabled) AppMotion.contentExit else 0, easing = AppMotion.easing))
@@ -1261,14 +1289,17 @@ internal fun TaskCard(activity: ComposeMainActivity, nav: NavHostController, tas
             }
         }
         val target = task.optDouble("target", 1.0).coerceAtLeast(.001)
-        val actualProgress = (activity.engine.progress(task, System.currentTimeMillis()) / target)
+        val actualProgress = (activity.engine.progress(displayedTask, System.currentTimeMillis()) / target)
             .toFloat().coerceIn(0f, 1f)
         val metadata: @Composable () -> Unit = {
             FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 MetaPill("截止 ${timeText(task.optLong("due"))}")
-                MetaPill(if (task.optInt("from") == 0 && task.optInt("until", 1440) == 1440) "全天有效"
+                MetaPill(if (task.optInt("from") == 0 && task.optInt("until", 1440) == 1440) "全天"
                     else "${clockText(task.optInt("from"))}—${clockText(task.optInt("until", 1440))} 有效")
+                val place = task.optString("place").takeIf { it.isNotEmpty() }
+                    ?.let { activity.db.one("places", it)?.optString("name") }
+                if (!place.isNullOrBlank()) MetaPill("地点 · $place")
             }
         }
         if (featured) {
@@ -1280,9 +1311,11 @@ internal fun TaskCard(activity: ComposeMainActivity, nav: NavHostController, tas
                 "标记完成" -> GlassPrimaryButton("标记完成",
                     Modifier.fillMaxWidth().taskShared("action-${visual.id}", shared),
                     state = if (locallyCompleted) GlassButtonState.Success else GlassButtonState.Idle,
+                    enabled = !locallyCompleted,
                     iconRes = taskActionIcon("标记完成")) {
                     if (activity.act { activity.engine.manual(task, 1.0, "手动确认完成", false) }) {
                         locallyCompleted = true
+                        completionEvent++
                         haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
                         onCompleted?.invoke()
                     }
@@ -1445,7 +1478,11 @@ private fun PlansScreen(activity: ComposeMainActivity, nav: NavHostController, t
                 verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 MetaPill("目标 ${numberText(plan.optDouble("target"))}${activity.unit(plan)} · ${cycleText(plan.optString("cycle"))}")
                 if (placeName != null) MetaPill("地点 · $placeName")
-                if (current == null) MetaPill(if (plan.optBoolean("archived")) "已停止重复" else "暂无待执行")
+                if (current == null) MetaPill(if (plan.optBoolean("archived")) "已停止重复" else when {
+                    plan.optString("cycle") != "once" -> "周期规则生效中"
+                    instances.any { it.optString("planId") == plan.optString("id") && activity.done(it) } -> "本计划已完成"
+                    else -> "待生成任务"
+                })
             }
             if (current != null) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,

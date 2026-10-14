@@ -17,6 +17,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -39,9 +40,11 @@ internal fun HourglassInstrument(
     richMotion: Boolean,
     progressLabel: String,
     modifier: Modifier = Modifier,
-    instrumentSize: androidx.compose.ui.unit.Dp = if (compact) 184.dp else 212.dp
+    instrumentSize: androidx.compose.ui.unit.Dp = if (compact) 184.dp else 212.dp,
+    turnToken: Int = 0
 ) {
     val palette = AppColors.current
+    val turn = rememberHourglassTurn(turnToken, state, motionEnabled)
     var grainPhase by remember { mutableFloatStateOf(0f) }
     val glint = remember { Animatable(-1f) }
     val flowing = state == HourglassState.Running && motionEnabled && richMotion
@@ -57,7 +60,9 @@ internal fun HourglassInstrument(
             glint.animateTo(1f, tween(420))
         } else glint.snapTo(-1f)
     }
-    Spacer(modifier.size(instrumentSize).semantics {
+    Spacer(modifier.size(instrumentSize).graphicsLayer {
+        rotationZ = if (motionEnabled) turn.value else 0f
+    }.semantics {
         contentDescription = progressLabel
     }.drawWithCache {
         val w = size.width
