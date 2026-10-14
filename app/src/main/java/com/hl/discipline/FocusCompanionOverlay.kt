@@ -122,7 +122,7 @@ internal class FocusCompanionOverlayHost(
 @Composable
 private fun CompanionPlate(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
     val palette = AppColors.current
-    Surface(modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp),
+    Surface(modifier.widthIn(max = 228.dp).fillMaxWidth(), shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surface.copy(alpha = if (palette.dark) .84f else .86f),
         contentColor = MaterialTheme.colorScheme.onSurface,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = .65f)), tonalElevation = 0.dp) {
@@ -135,7 +135,8 @@ private fun CompanionPlate(modifier: Modifier = Modifier, content: @Composable C
 @Composable
 private fun CompanionCaption(text: String) {
     Text(text, style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 16.sp),
-        color = if (AppColors.current.dark) Color(0xFFB7C8C2) else Color(0xFF46534F))
+        color = if (AppColors.current.dark) Color(0xFFB7C8C2) else Color(0xFF46534F),
+        maxLines = 2, overflow = TextOverflow.Ellipsis)
 }
 
 @Composable
@@ -166,7 +167,7 @@ private fun CompanionDashboard(snapshot: CompanionSnapshot, close: () -> Unit, t
     CompanionPlate {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("此刻", style = MaterialTheme.typography.titleSmall)
+                Text("此刻", style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(snapshot.focusTitle, style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp, lineHeight = 18.sp),
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
@@ -175,8 +176,9 @@ private fun CompanionDashboard(snapshot: CompanionSnapshot, close: () -> Unit, t
         if (snapshot.phase.isNotBlank()) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text(countdown(snapshot.time), style = MaterialTheme.typography.headlineSmall.copy(
-                        fontFamily = FontFamily.Monospace, fontSize = 26.sp, fontWeight = FontWeight.Medium,
+                    Text(countdown(snapshot.time), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.headlineSmall.copy(
+                        fontFamily = BodyFontFamily, fontSize = 26.sp, fontWeight = FontWeight.Medium,
                         fontFeatureSettings = "tnum"))
                     CompanionCaption("${companionPhase(snapshot.phase)} · 第 ${snapshot.cycle} 轮" +
                         if (snapshot.forward) " · 已专注" else " · 剩余")
@@ -192,7 +194,8 @@ private fun CompanionDashboard(snapshot: CompanionSnapshot, close: () -> Unit, t
     CompanionPlate(Modifier.pressableCard(RoundedCornerShape(16.dp), "展开或收起今日计划") { allTasks = !allTasks }
         .semantics { stateDescription = if (allTasks) "已展开" else "已收起" }) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("今日计划", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+            Text("今日计划", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
             CompanionCaption(snapshot.taskCount.toString())
             Spacer(Modifier.width(6.dp)); DisclosureMark(allTasks)
         }
@@ -209,7 +212,8 @@ private fun CompanionDashboard(snapshot: CompanionSnapshot, close: () -> Unit, t
     CompanionPlate(Modifier.pressableCard(RoundedCornerShape(16.dp), "展开或收起应用限额") { allLimits = !allLimits }
         .semantics { stateDescription = if (allLimits) "已展开" else "已收起" }) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("应用限额", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+            Text("应用限额", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
             DisclosureMark(allLimits)
         }
         if (!snapshot.detailsLoaded) CompanionCaption("正在读取…")
@@ -221,7 +225,8 @@ private fun CompanionDashboard(snapshot: CompanionSnapshot, close: () -> Unit, t
         if (!allLimits && snapshot.limits.size > 1) CompanionCaption("另有 ${snapshot.limits.size - 1} 项 · 点按展开")
     }
     if (snapshot.error.isNotBlank()) CompanionPlate {
-        Text(snapshot.error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+        Text(snapshot.error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall,
+            maxLines = 3, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -239,7 +244,7 @@ internal fun CompanionSettings(activity: ComposeMainActivity) {
             Text("悬浮球", style = MaterialTheme.typography.bodyLarge)
             Caption(if (enabled && !access) "需要系统悬浮窗授权" else "点按查看计划、计时与应用余额")
         }
-        Switch(checked = enabled, modifier = Modifier.semantics {
+        GlassSwitch(checked = enabled, modifier = Modifier.semantics {
             contentDescription = "启用悬浮球"
         }, onCheckedChange = { value ->
             activity.act {

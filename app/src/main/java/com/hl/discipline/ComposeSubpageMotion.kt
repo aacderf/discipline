@@ -5,6 +5,8 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.SeekableTransitionState
 import androidx.compose.animation.core.rememberTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -27,7 +29,12 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.launch
+
+/** An opaque page remains opaque while its contents move over the previous destination. */
+@Composable
+internal fun OpaqueSubpage(content: @Composable () -> Unit) {
+    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) { content() }
+}
 
 /** Internal settings pages only. NavHost retains ownership of destination back gestures. */
 @Composable
@@ -38,12 +45,11 @@ internal fun SubpageTransition(
     val motion = LocalMotionEnabled.current
     val state = remember { SeekableTransitionState(page) }
     val transition = rememberTransition(state, label = "设置子页")
-    val scope = rememberCoroutineScope()
-    val latestPage by rememberUpdatedState(page)
     var seeking by remember { mutableStateOf(false) }
     val travel = with(LocalDensity.current) { AppMotion.pageTravel.roundToPx() }
 
-    LaunchedEffect(page, motion) {
+    // Re-run after a gesture commits or cancels, even if its logical page has not changed.
+    LaunchedEffect(page, motion, seeking) {
         if (!seeking) {
             if (motion) state.animateTo(page) else state.snapTo(page)
         }
@@ -57,26 +63,23 @@ internal fun SubpageTransition(
             // Commit the UI state immediately; the remaining movement never delays the action.
             onBack()
         } catch (cancel: CancellationException) {
-            scope.launch {
-                if (motion) state.animateTo(latestPage) else state.snapTo(latestPage)
-            }
             throw cancel
         } finally {
             seeking = false
         }
     }
-    transition.AnimatedContent(Modifier.fillMaxSize().clipToBounds(), transitionSpec = {
+    transition.AnimatedContent(Modifier.fillMaxSize()
+        .background(MaterialTheme.colorScheme.background).clipToBounds(), transitionSpec = {
         val returning = targetState == root
         val duration = if (motion) AppMotion.panel else 0
-        (fadeIn(tween(duration, easing = AppMotion.easing)) +
-            slideInHorizontally(tween(duration, easing = AppMotion.easing)) {
+        (slideInHorizontally(tween(duration, easing = AppMotion.easing)) {
                 if (returning) -travel else travel
-            }) togetherWith (fadeOut(tween(if (motion) AppMotion.briefExit else 0, easing = AppMotion.easing)) +
-            slideOutHorizontally(tween(duration, easing = AppMotion.easing)) {
+            } togetherWith slideOutHorizontally(tween(duration, easing = AppMotion.easing)) {
                 if (returning) travel / 2 else -travel / 2
-            }) using null
+            }).apply { targetContentZIndex = if (returning) -1f else 1f } using null
     }) { shown ->
-        ScreenExitGuard(shown != page || seeking) { content(shown) }
+        ScreenExitGuard(shown != page || seeking, Modifier.fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)) { content(shown) }
     }
 }
 

@@ -215,7 +215,7 @@ internal fun TimetableWeekGrid(state: JSONObject, week: Int, selectedDay: Int,
                                                 fadeOut(tween(if (motion) AppMotion.gridLabels else 0))
                                         }, label = "课程信息密度") { compact ->
                                         Text(if (compact) courseShortName(course.optString("title")) else course.optString("title"),
-                                            fontFamily = FontFamily.SansSerif, fontSize = if (geometry.overview) 12.sp else 14.sp,
+                        fontFamily = BodyFontFamily, fontSize = if (geometry.overview) 12.sp else 14.sp,
                                             lineHeight = if (geometry.overview) 15.sp else 19.sp,
                                             maxLines = if (compact) 4 else 3, overflow = TextOverflow.Ellipsis,
                                             color = MaterialTheme.colorScheme.onSurface,

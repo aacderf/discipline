@@ -14,14 +14,21 @@ internal class CompanionRevealLayout(context: Context) : FrameLayout(context) {
     private val radius = 16f * resources.displayMetrics.density
     private val travel = 28f * resources.displayMetrics.density
     var acceptsInput = true
+        set(value) { field = value; updateAccessibilityVisibility() }
     var reveal = 0f
         set(value) {
             field = value.coerceIn(0f, 1f)
             alpha = field
             getChildAt(0)?.translationY = travel * (1f - field)
+            updateAccessibilityVisibility()
             invalidate()
         }
-    init { alpha = 0f; clipChildren = true; clipToPadding = true }
+    init { alpha = 0f; clipChildren = true; clipToPadding = true; updateAccessibilityVisibility() }
+
+    private fun updateAccessibilityVisibility() {
+        importantForAccessibility = if (acceptsInput && reveal > 0f) IMPORTANT_FOR_ACCESSIBILITY_AUTO
+            else IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+    }
 
     private fun updateMask() {
         if (width == 0 || height == 0) return

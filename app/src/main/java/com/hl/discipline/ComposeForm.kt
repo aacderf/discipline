@@ -40,6 +40,42 @@ internal fun Input(label: String, value: String, onValue: (String) -> Unit, modi
         singleLine = singleLine, keyboardOptions = KeyboardOptions(keyboardType = keyboard))
 }
 
+/** Keep Material's native touch/keyboard/semantics behavior, with explicit theme contrast. */
+@Composable
+internal fun GlassSwitch(checked: Boolean, onCheckedChange: ((Boolean) -> Unit)?,
+                        modifier: Modifier = Modifier, enabled: Boolean = true) {
+    val palette = AppColors.current
+    val colors = MaterialTheme.colorScheme
+    Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled,
+        modifier = modifier.heightIn(min = 48.dp),
+        colors = SwitchDefaults.colors(
+            checkedThumbColor = palette.navigationInk,
+            checkedTrackColor = palette.navigationFill,
+            checkedBorderColor = palette.navigationFill,
+            uncheckedThumbColor = colors.primary,
+            uncheckedTrackColor = colors.surfaceVariant,
+            uncheckedBorderColor = colors.onSurfaceVariant,
+            disabledCheckedThumbColor = palette.disabledText,
+            disabledCheckedTrackColor = palette.secondaryDisabled,
+            disabledCheckedBorderColor = palette.disabledText,
+            disabledUncheckedThumbColor = palette.disabledText,
+            disabledUncheckedTrackColor = palette.secondaryDisabled,
+            disabledUncheckedBorderColor = palette.disabledText))
+}
+
+@Composable
+internal fun GlassCheckbox(checked: Boolean, onCheckedChange: ((Boolean) -> Unit)?,
+                          modifier: Modifier = Modifier, enabled: Boolean = true) {
+    val palette = AppColors.current
+    val colors = MaterialTheme.colorScheme
+    Checkbox(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled,
+        modifier = modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
+        colors = CheckboxDefaults.colors(checkedColor = colors.primary,
+            uncheckedColor = colors.primary, checkmarkColor = colors.onPrimary,
+            disabledCheckedColor = palette.disabledText,
+            disabledUncheckedColor = palette.disabledText))
+}
+
 @Composable
 private fun ClockInput(label: String, value: String, onValue: (String) -> Unit, error: String = "") {
     OutlinedTextField(value, { raw ->

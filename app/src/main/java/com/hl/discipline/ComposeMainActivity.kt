@@ -78,7 +78,9 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.LookaheadScope
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.graphicsLayer
@@ -463,29 +465,25 @@ private fun DisciplineApp(activity: ComposeMainActivity) {
             val task = initialState.destination.route == "task/{id}" || targetState.destination.route == "task/{id}"
             if (!activity.motionEnabled) EnterTransition.None
             else if (task) fadeIn(tween(AppMotion.taskShared, easing = AppMotion.easing))
-            else fadeIn(tween(AppMotion.pageEnter, easing = AppMotion.easing)) +
-                slideInHorizontally(tween(AppMotion.pageEnter, easing = AppMotion.easing)) { pageTravelPx }
+            else slideInHorizontally(tween(AppMotion.pageEnter, easing = AppMotion.easing)) { pageTravelPx }
         },
         exitTransition = {
             val task = initialState.destination.route == "task/{id}" || targetState.destination.route == "task/{id}"
             if (!activity.motionEnabled) ExitTransition.None
             else if (task) fadeOut(tween(AppMotion.sharedContentExit, easing = AppMotion.easing))
-            else fadeOut(tween(AppMotion.pageExit, easing = AppMotion.easing)) +
-                slideOutHorizontally(tween(AppMotion.pageExit, easing = AppMotion.easing)) { -pageTravelPx / 2 }
+            else slideOutHorizontally(tween(AppMotion.pageExit, easing = AppMotion.easing)) { -pageTravelPx / 2 }
         },
         popEnterTransition = {
             val task = initialState.destination.route == "task/{id}" || targetState.destination.route == "task/{id}"
             if (!activity.motionEnabled) EnterTransition.None
             else if (task) fadeIn(tween(AppMotion.taskShared, easing = AppMotion.easing))
-            else fadeIn(tween(AppMotion.pageEnter, easing = AppMotion.easing)) +
-                slideInHorizontally(tween(AppMotion.pageEnter, easing = AppMotion.easing)) { -pageTravelPx }
+            else slideInHorizontally(tween(AppMotion.pageEnter, easing = AppMotion.easing)) { -pageTravelPx }
         },
         popExitTransition = {
             val task = initialState.destination.route == "task/{id}" || targetState.destination.route == "task/{id}"
             if (!activity.motionEnabled) ExitTransition.None
             else if (task) fadeOut(tween(AppMotion.sharedContentExit, easing = AppMotion.easing))
-            else fadeOut(tween(AppMotion.pageExit, easing = AppMotion.easing)) +
-                slideOutHorizontally(tween(AppMotion.pageExit, easing = AppMotion.easing)) { pageTravelPx / 2 }
+            else slideOutHorizontally(tween(AppMotion.pageExit, easing = AppMotion.easing)) { pageTravelPx / 2 }
         }) {
         composable("main") {
             CompositionLocalProvider(LocalTaskMotion provides TaskMotionScope(shared, this)) {
@@ -502,15 +500,15 @@ private fun DisciplineApp(activity: ComposeMainActivity) {
                 PlanOverview(activity, nav, entry.arguments?.getString("id").orEmpty())
             }
         }
-        composable("plans") { PlansPage(activity, nav) }
+        composable("plans") { OpaqueSubpage { PlansPage(activity, nav) } }
         composable("form/{id}") { entry ->
             PlanFormScreen(activity, nav, entry.arguments?.getString("id").orEmpty())
         }
-        composable("settings") { SettingsScreen(activity, nav) }
-        composable("app-limits") { AppLimitsScreen(activity, onBack = { nav.popBackStack() },
-            onInsights = { nav.navigate("usage-insights") }) }
-        composable("usage-insights") { UsageInsightsScreen(activity, onBack = { nav.popBackStack() },
-            onPlan = { week -> nav.navigate("usage-plan/$week") }) }
+        composable("settings") { OpaqueSubpage { SettingsScreen(activity, nav) } }
+        composable("app-limits") { OpaqueSubpage { AppLimitsScreen(activity, onBack = { nav.popBackStack() },
+            onInsights = { nav.navigate("usage-insights") }) } }
+        composable("usage-insights") { OpaqueSubpage { UsageInsightsScreen(activity, onBack = { nav.popBackStack() },
+            onPlan = { week -> nav.navigate("usage-plan/$week") }) } }
         composable("usage-plan/{week}") { entry -> UsagePlanEditorScreen(activity,
             entry.arguments?.getString("week")?.toLongOrNull()?:0, onBack = { nav.popBackStack() }) }
         composable("quotes") { QuotesScreen(activity, nav) }
@@ -536,7 +534,8 @@ private fun DisciplineApp(activity: ComposeMainActivity) {
 }
 
 @Composable
-internal fun ScreenHeader(title: String, onBack: (() -> Unit)? = null, lifted: Boolean = false) {
+internal fun ScreenHeader(title: String, onBack: (() -> Unit)? = null, lifted: Boolean = false,
+                          subtitle: String = "") {
     ScrollChrome(lifted) {
     Row(Modifier.fillMaxWidth().statusBarsPadding().heightIn(min = 60.dp).padding(horizontal = AppSpacing.page),
         verticalAlignment = Alignment.CenterVertically) {
@@ -548,6 +547,11 @@ internal fun ScreenHeader(title: String, onBack: (() -> Unit)? = null, lifted: B
             Spacer(Modifier.width(AppSpacing.xs))
         }
         Text(title, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onBackground)
+        if (subtitle.isNotBlank()) {
+            Spacer(Modifier.width(AppSpacing.xs))
+            Text(subtitle, style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+        }
     }
     }
 }
@@ -555,13 +559,22 @@ internal fun ScreenHeader(title: String, onBack: (() -> Unit)? = null, lifted: B
 @Composable
 internal fun Screen(title: String, onBack: (() -> Unit)? = null, bottom: @Composable (() -> Unit)? = null,
                     scrollState: ScrollState? = null,
+                    subtitle: String = "", floatingActionButton: @Composable (() -> Unit)? = null,
+                    fixedContent: @Composable (() -> Unit)? = null,
                     content: @Composable ColumnScope.() -> Unit) {
     val contentScroll = scrollState ?: rememberScrollState()
     val liftPx = with(LocalDensity.current) { 24.dp.roundToPx() }
     val lifted by remember(contentScroll, liftPx) { derivedStateOf { contentScroll.value > liftPx } }
     Scaffold(
-        topBar = { ScreenHeader(title, onBack, scrollState != null && lifted) },
+        modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
+        topBar = { Column(Modifier.background(MaterialTheme.colorScheme.background)) {
+            ScreenHeader(title, onBack, scrollState != null && lifted, subtitle)
+            fixedContent?.invoke()
+        } },
         bottomBar = { if (bottom != null) Box(Modifier.navigationBarsPadding()) { bottom() } },
+        floatingActionButton = {
+            if (floatingActionButton != null) Box(Modifier.navigationBarsPadding()) { floatingActionButton() }
+        },
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
@@ -641,6 +654,8 @@ private fun MainScreen(activity: ComposeMainActivity, nav: NavHostController) {
         derivedStateOf { if (tab == "timetable") timetableLifted else activeScroll.value > liftPx }
     }
     val tabStates = rememberSaveableStateHolder()
+    var createPlanBounds by remember { mutableStateOf(Rect.Zero) }
+    CompositionLocalProvider(LocalCreatePlanBounds provides if (tab == "today") createPlanBounds else Rect.Zero) {
     ScreenExitGuard(leaving) {
     Scaffold(
         topBar = {
@@ -649,12 +664,7 @@ private fun MainScreen(activity: ComposeMainActivity, nav: NavHostController) {
                 horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 tabTransition.AnimatedContent(modifier = Modifier.weight(1f).clipToBounds(),
                     transitionSpec = {
-                        (fadeIn(tween(if (activity.motionEnabled) AppMotion.state else 0, easing = AppMotion.easing)) +
-                            slideInVertically(tween(if (activity.motionEnabled) AppMotion.spatial else 0,
-                                easing = AppMotion.easing)) { it / 6 }) togetherWith
-                            (fadeOut(tween(if (activity.motionEnabled) AppMotion.outgoing else 0)) +
-                                slideOutVertically(tween(if (activity.motionEnabled) AppMotion.spatial else 0,
-                                    easing = AppMotion.easing)) { -it / 6 })
+                        staggeredTextTransform(activity.motionEnabled)
                     }) { shown ->
                     ScreenExitGuard(shown != tab, Modifier.wrapContentSize(Alignment.CenterStart)) {
                         if (shown == "today") {
@@ -754,7 +764,9 @@ private fun MainScreen(activity: ComposeMainActivity, nav: NavHostController) {
             }
             }
         }, floatingActionButton = {
-            if (tab == "today") CreatePlanAction { nav.navigate("form/new") }
+            if (tab == "today") CreatePlanAction(Modifier.onGloballyPositioned {
+                createPlanBounds = it.boundsInWindow()
+            }) { nav.navigate("form/new") }
         }, containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets(0, 0, 0, 0)
     ) { padding ->
@@ -772,7 +784,7 @@ private fun MainScreen(activity: ComposeMainActivity, nav: NavHostController) {
             ScreenExitGuard(leaving || shownTab != tab) {
                 Column(Modifier.fillMaxSize()
                     .background(MaterialTheme.colorScheme.background)
-                    .then(if (shownTab == "today" || shownTab == "timetable" || shownTab == "focus") Modifier else Modifier.verticalScroll(when (shownTab) {
+                     .then(if (shownTab == "today" || shownTab == "timetable" || shownTab == "focus" || shownTab == "stats") Modifier else Modifier.verticalScroll(when (shownTab) {
                         "timetable" -> timetableScroll
                         "focus" -> focusScroll
                         "stats" -> statsScroll
@@ -782,7 +794,7 @@ private fun MainScreen(activity: ComposeMainActivity, nav: NavHostController) {
                         when (shownTab) {
                             "timetable" -> TimetableScreen(activity) { timetableLifted = it }
                             "focus" -> FocusScreen(activity, nav, focusScroll)
-                            "stats" -> StatsScreen(activity, nav)
+                             "stats" -> StatsScreen(activity, nav, statsScroll)
                             else -> TodayScreen(activity, nav, todayRange, todayScroll, weekScroll)
                         }
                     }
@@ -792,6 +804,10 @@ private fun MainScreen(activity: ComposeMainActivity, nav: NavHostController) {
     }
     }
 }
+
+}
+
+private val LocalCreatePlanBounds = staticCompositionLocalOf { Rect.Zero }
 
 private data class HomeHero(val key: String, val task: JSONObject?, val done: Int)
 
@@ -849,7 +865,7 @@ private fun TodayContent(activity: ComposeMainActivity, nav: NavHostController, 
             java.time.format.DateTimeFormatter.ofPattern("M月d日 EEEE", Locale.CHINA)))
         else Spacer(Modifier.width(1.dp))
         TextButton(onClick = { nav.navigate("plans") }, modifier = Modifier.heightIn(min = 48.dp)) {
-            Text("管理计划")
+            Text("管理计划 ›")
         }
     }
     if (range == 1) {
@@ -1163,6 +1179,8 @@ internal fun TaskCard(activity: ComposeMainActivity, nav: NavHostController, tas
     val taskTransitionId = LocalTaskTransitionId.current
     var locallyCompleted by remember(visual.id) { mutableStateOf(false) }
     var open by rememberSaveable(visual.id) { mutableStateOf(featured) }
+    var avoidFab by remember(visual.id) { mutableStateOf(false) }
+    val fabBounds = LocalCreatePlanBounds.current
     val shared = richMotionEnabled() && taskTransitionId?.value == visual.id
     fun openDetail() {
         taskTransitionId?.value = visual.id
@@ -1175,7 +1193,14 @@ internal fun TaskCard(activity: ComposeMainActivity, nav: NavHostController, tas
             clipContent = !embedded,
             onClickLabel = "查看${visual.name}详情") { openDetail() }
     val content: @Composable ColumnScope.() -> Unit = {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp),
+        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
+            .onGloballyPositioned { coordinates ->
+                avoidFab = !open && !featured && fabBounds != Rect.Zero && coordinates.boundsInWindow().overlaps(fabBounds)
+            }.padding(end = if (avoidFab) 72.dp else 0.dp)
+            .quietClickable(if (open) "查看${visual.name}详情" else "展开${visual.name}") {
+                if (open) openDetail() else open = true
+            },
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically) {
             TaskTypeGlyph(visual.metric, Modifier.taskShared("glyph-${visual.id}", shared)
                 .onGloballyPositioned { coordinates ->
@@ -1189,6 +1214,14 @@ internal fun TaskCard(activity: ComposeMainActivity, nav: NavHostController, tas
                 fontWeight = if (featured) FontWeight.Bold else FontWeight.SemiBold,
                 textDecoration = if (activity.done(task) || locallyCompleted) androidx.compose.ui.text.style.TextDecoration.LineThrough
                     else null)
+            if (open && task.optString("status") == "open") {
+                val pinned = activity.db.one("plans", task.optString("planId"))?.optBoolean("pinned") == true
+                TextButton(onClick = { activity.togglePlanPin(task.optString("planId")) },
+                    modifier = Modifier.heightIn(min = 48.dp).widthIn(min = 48.dp).taskTransitionAccessory(shared),
+                    contentPadding = PaddingValues(0.dp)) {
+                    Text(if (pinned) "取消置顶" else "置顶计划", style = MaterialTheme.typography.labelSmall)
+                }
+            }
             GlassIconButton(if (open) "收起任务" else "展开任务",
                 modifier = Modifier.taskTransitionAccessory(shared),
                 state = if (open) "已展开" else "已收起", onClick = { open = !open }) {
@@ -1247,13 +1280,6 @@ internal fun TaskCard(activity: ComposeMainActivity, nav: NavHostController, tas
                     ProgressTrack(actualProgress, "${visual.name}完成进度")
                 }
                 Caption("有效时段 ${clockText(task.optInt("from"))}—${clockText(task.optInt("until", 1440))}")
-                if (task.optString("status") == "open") {
-                    val pinned = activity.db.one("plans", task.optString("planId"))?.optBoolean("pinned") == true
-                    TextButton(onClick = { activity.togglePlanPin(task.optString("planId")) },
-                        modifier = Modifier.heightIn(min = 48.dp)) {
-                        Text(if (pinned) "取消置顶" else "置顶计划")
-                    }
-                }
                 if (activity.done(task) && !featured) {
                     TextButton(onClick = { (onDismissToday ?: { activity.dismissToday(task, true) })() },
                         modifier = Modifier.heightIn(min = 48.dp)) { Text("从日常列表移除") }
@@ -1270,7 +1296,9 @@ internal fun TaskCard(activity: ComposeMainActivity, nav: NavHostController, tas
 
 @Composable
 private fun PlansPage(activity: ComposeMainActivity, nav: NavHostController) {
-    Screen("管理计划", onBack = { nav.popBackStack() }) { PlansScreen(activity, nav) }
+    val total = remember(activity.revision) { activity.db.all("plans").size }
+    Screen("管理计划", onBack = { nav.popBackStack() }, subtitle = "共 $total 项",
+        floatingActionButton = { CreatePlanAction { nav.navigate("form/new") } }) { PlansScreen(activity, nav) }
 }
 
 @Composable
@@ -1294,27 +1322,26 @@ private fun PlansScreen(activity: ComposeMainActivity, nav: NavHostController) {
             exitingCurrent = null
         }
     }
-    GlassTaskPanel {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("我的计划", style = MaterialTheme.typography.titleLarge)
-                Caption("${plans.size} 项计划，按状态查看与执行")
+    DraggableSegment(listOf("全部", "进行中", "已完成"), filter, activity.motionEnabled) { filter = it }
+    var placeMenu by remember { mutableStateOf(false) }
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs),
+        verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.weight(1f)) {
+            val selectedName = places.firstOrNull { it.optString("id") == selectedPlace }?.optString("name") ?: "全部地点"
+            GlassSecondaryButton("地点：$selectedName ▾", Modifier.fillMaxWidth()) { placeMenu = true }
+            DropdownMenu(expanded = placeMenu, onDismissRequest = { placeMenu = false }) {
+                DropdownMenuItem(text = { Text("全部地点") }, onClick = { selectedPlace = ""; placeMenu = false })
+                places.forEach { place ->
+                    DropdownMenuItem(text = { Text(place.optString("name")) }, onClick = {
+                        selectedPlace = place.optString("id"); placeMenu = false
+                    })
+                }
             }
-            Secondary("新建计划", Modifier.widthIn(min = 88.dp)) { nav.navigate("form/new") }
+        }
+        TextButton(onClick = { activity.openMap(selectedPlace) }, modifier = Modifier.heightIn(min = 48.dp)) {
+            Text("地图与地点")
         }
     }
-    DraggableSegment(listOf("全部", "进行中", "已完成"), filter, activity.motionEnabled) { filter = it }
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically) {
-        Caption("按地点查看计划")
-        Secondary("地图与地点") { activity.openMap() }
-    }
-    if (places.isNotEmpty()) SelectField("地点筛选", listOf("全部地点") + places.map { it.optString("name") },
-        (places.indexOfFirst { it.optString("id") == selectedPlace } + 1).coerceAtLeast(0)) {
-        selectedPlace = if (it == 0) "" else places[it - 1].optString("id")
-    }
-    if (selectedPlace.isNotEmpty()) Secondary("查看所选地点范围") { activity.openMap(selectedPlace) }
     val visible = plans.filter { plan ->
         val periods = instances.filter { it.optString("planId") == plan.optString("id") }
         val completed = periods.isNotEmpty() && periods.none { it.optString("status") == "open" } &&
@@ -1428,7 +1455,7 @@ private fun PlansScreen(activity: ComposeMainActivity, nav: NavHostController) {
         }
     }
     }
-    Spacer(Modifier.height(16.dp))
+    Spacer(Modifier.height(88.dp))
 }
 
 @Composable
@@ -1473,13 +1500,6 @@ private fun PlanOverview(activity: ComposeMainActivity, nav: NavHostController, 
                 nav.popBackStack()
             }
         }) { deleteConfirm = false }
-}
-
-@Composable
-internal fun ConfirmDialog(title: String, message: String, confirm: () -> Unit, dismiss: () -> Unit) {
-    AlertDialog(onDismissRequest = dismiss, title = { Text(title) }, text = { Text(message) },
-        confirmButton = { TextButton(onClick = confirm) { Text("确认") } },
-        dismissButton = { TextButton(onClick = dismiss) { Text("返回") } })
 }
 
 internal fun ComposeMainActivity.done(task: JSONObject): Boolean =

@@ -37,6 +37,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.window.DialogWindowProvider
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -69,7 +71,7 @@ private fun pressDepth(pressed: Boolean, raised: Dp): Pair<Float, Dp> {
 }
 
 @Composable
-internal fun CreatePlanAction(onClick: () -> Unit) {
+internal fun CreatePlanAction(modifier: Modifier = Modifier, onClick: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val focused by interaction.collectIsFocusedAsState()
@@ -79,7 +81,7 @@ internal fun CreatePlanAction(onClick: () -> Unit) {
         listOf(palette.primaryPressedTop, palette.primaryPressedBottom)
         else listOf(palette.primaryTop, palette.primaryBottom))
     val shape = AppShapes.material.large
-    Box(Modifier.size(56.dp).testTag("create-plan-fab")
+    Box(modifier.size(56.dp).testTag("create-plan-fab")
         .graphicsLayer { scaleX = scale; scaleY = scale }.clip(shape)
         .background(fill, shape)
         .border(1.dp, if (focused) MaterialTheme.colorScheme.primary else palette.primaryBottom, shape)
@@ -393,4 +395,35 @@ internal fun taskActionIcon(action: String): Int = when (action) {
     "记录数量" -> R.drawable.ic_target
     "开始专注" -> R.drawable.ic_play
     else -> R.drawable.ic_check
+}
+
+/** Native dialog behavior with a solid card, one edge and a predictable 32% scrim. */
+@Composable
+internal fun GlassAlertDialog(
+    onDismissRequest: () -> Unit,
+    title: @Composable () -> Unit,
+    text: @Composable () -> Unit,
+    confirmButton: @Composable () -> Unit,
+    dismissButton: @Composable (() -> Unit)? = null
+) {
+    AlertDialog(onDismissRequest = onDismissRequest,
+        modifier = Modifier.border(1.dp, AppColors.current.glassBorder, AppShapes.glass),
+        shape = AppShapes.glass,
+        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 1f),
+        tonalElevation = 0.dp,
+        title = {
+            val window = (LocalView.current.parent as? DialogWindowProvider)?.window
+            SideEffect {
+                window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+                window?.setDimAmount(.32f)
+            }
+            title()
+        }, text = text, confirmButton = confirmButton, dismissButton = dismissButton)
+}
+
+@Composable
+internal fun ConfirmDialog(title: String, message: String, confirm: () -> Unit, dismiss: () -> Unit) {
+    GlassAlertDialog(onDismissRequest = dismiss, title = { Text(title) }, text = { Text(message) },
+        confirmButton = { TextButton(onClick = confirm) { Text("确认") } },
+        dismissButton = { TextButton(onClick = dismiss) { Text("返回") } })
 }

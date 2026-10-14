@@ -39,6 +39,18 @@ internal data class ViewMotionScope(
 
 internal val LocalViewMotion = staticCompositionLocalOf<ViewMotionScope?> { null }
 
+/** Swap glyphs on one clock without stacking two dense text silhouettes. */
+internal fun <S> AnimatedContentTransitionScope<S>.staggeredTextTransform(motion: Boolean): ContentTransform {
+    val enterDuration = if (motion) 190 else 0
+    val enterDelay = if (motion) 50 else 0
+    val exitDuration = if (motion) 70 else 0
+    return (fadeIn(tween(enterDuration, delayMillis = enterDelay, easing = AppMotion.easing)) +
+        slideInVertically(tween(enterDuration, delayMillis = enterDelay, easing = AppMotion.easing)) { it / 6 }) togetherWith
+        (fadeOut(tween(exitDuration, easing = FastOutLinearInEasing)) +
+            slideOutVertically(tween(exitDuration, easing = FastOutLinearInEasing)) { -it / 6 }) using
+        SizeTransform { _, _ -> tween(if (motion) 240 else 0, easing = AppMotion.easing) }
+}
+
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 internal fun ViewTransitionLayout(content: @Composable SharedTransitionScope.() -> Unit) {
@@ -112,10 +124,7 @@ internal fun ModeSwitch(label: String, alternate: String, style: TextStyle,
             stateDescription = "可切换到$alternate"
         }, verticalAlignment = Alignment.CenterVertically) {
         transition.AnimatedContent(modifier = Modifier.clipToBounds(), transitionSpec = {
-            fadeIn(tween(if (motion) AppMotion.state else 0)) +
-                slideInVertically(tween(if (motion) AppMotion.state else 0, easing = AppMotion.easing)) { it / 6 } togetherWith
-                (fadeOut(tween(if (motion) AppMotion.outgoing else 0)) +
-                    slideOutVertically(tween(if (motion) AppMotion.state else 0, easing = AppMotion.easing)) { -it / 6 })
+            staggeredTextTransform(motion)
         }) { shown ->
             Text(shown, style = style, modifier = Modifier.clearAndSetSemantics { })
         }

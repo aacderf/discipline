@@ -3,6 +3,8 @@ package com.hl.discipline
 import android.content.Intent
 import android.provider.Settings
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -13,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -40,6 +43,7 @@ private fun usageTime(millis:Long):String {
     var keyConfigured by remember(revision) { mutableStateOf(DeepSeekKeyStore.hasKey(activity)) }
     var sendConfirm by remember { mutableStateOf(false) }
     var showAll by rememberSaveable { mutableStateOf(false) }
+    var view by rememberSaveable { mutableIntStateOf(0) }
     var goal by rememberSaveable { mutableStateOf("减少娱乐应用的使用，保留学习和必要沟通。") }
     val draft=remember(revision) { activity.db.one("state","usageAnalysisDraft") }
     var review by remember { mutableStateOf<JSONObject?>(null) }
@@ -58,7 +62,19 @@ private fun usageTime(millis:Long):String {
     val chosen=selected.split('|').filter { it.isNotEmpty() }.toSet()
     val selectedApps=report?.apps?.filter {it.canLimit && it.pkg in chosen}.orEmpty()
     Box(Modifier.fillMaxSize().imePadding()) {
-    Screen("应用使用",onBack=onBack) {
+    Screen("应用使用与下周计划",onBack=onBack,
+        fixedContent={ Box(Modifier.fillMaxWidth().padding(horizontal=AppSpacing.page).padding(bottom=8.dp)) {
+            DraggableSegment(listOf("应用使用统计","制定下周计划"),view,activity.motionEnabled) {view=it}
+        } }, bottom={
+            if(view==0 && selectedApps.isNotEmpty()) Row(Modifier.fillMaxWidth()
+                .background(MaterialTheme.colorScheme.surface).heightIn(min=48.dp)
+                .padding(horizontal=AppSpacing.page),verticalAlignment=Alignment.CenterVertically) {
+                Text("已勾选 ${selectedApps.size} 个分析应用",Modifier.weight(1f),style=MaterialTheme.typography.labelMedium)
+                TextButton(onClick={view=1}) {Text("去生成下周计划 ›",style=MaterialTheme.typography.labelSmall)}
+            }
+        }) {
+        val data=report
+        if(view==0) {
         Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
             Text("过去 7 天",Modifier.weight(1f),style=MaterialTheme.typography.titleMedium)
             TextButton(onClick={reload++},enabled=access && !loading) { Text(if(loading) "更新中" else "刷新") }
@@ -69,7 +85,6 @@ private fun usageTime(millis:Long):String {
             Secondary("授权使用情况访问") { AndroidCompat.openSettings(activity,Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) }
         }
         if(error.isNotEmpty()) Caption(error)
-        val data=report
         if(data!=null) {
             Caption("${data.dates.first()}—${data.dates.last()} · 更新于 ${timeText(data.end)}")
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
@@ -91,11 +106,17 @@ private fun usageTime(millis:Long):String {
                     style=MaterialTheme.typography.bodyMedium)
                 Section("应用分布 · 勾选用于分析的应用")
                 val visible=if(showAll) data.apps else data.apps.take(10)
-                visible.forEach { app -> Row(Modifier.fillMaxWidth().heightIn(min=64.dp),verticalAlignment=Alignment.CenterVertically) {
-                    Checkbox(checked=app.pkg in chosen,enabled=app.canLimit,onCheckedChange={checked ->
+                visible.forEach { app ->
+                    val onSelectionChange: (Boolean) -> Unit = { checked ->
                         if(checked && chosen.size>=12) activity.toast("最多分析 12 个应用")
                         else selected=(if(checked) chosen+app.pkg else chosen-app.pkg).joinToString("|")
-                    },modifier=Modifier.semantics { contentDescription="分析${app.label}" })
+                    }
+                    Row(Modifier.fillMaxWidth().heightIn(min=64.dp)
+                        .toggleable(value=app.pkg in chosen,enabled=app.canLimit,role=Role.Checkbox,
+                            interactionSource=remember { MutableInteractionSource() },indication=null,
+                            onValueChange=onSelectionChange),verticalAlignment=Alignment.CenterVertically) {
+                    GlassCheckbox(checked=app.pkg in chosen,enabled=app.canLimit,onCheckedChange=null,
+                        modifier=Modifier.semantics { contentDescription="分析${app.label}" })
                     Column(Modifier.weight(1f)) { Text(app.label,style=MaterialTheme.typography.bodyLarge)
                         Caption(if(app.canLimit) "有记录日均 ${usageTime(app.total/data.availableDays.count { it }.coerceAtLeast(1))}" else "必要应用 · 仅显示数据") }
                     Text(usageTime(app.total),style=MaterialTheme.typography.labelLarge)
@@ -103,6 +124,9 @@ private fun usageTime(millis:Long):String {
                 if(data.apps.size>10) TextButton(onClick={showAll=!showAll}) { Text(if(showAll) "收起应用列表" else "查看全部 ${data.apps.size} 个应用") }
             }
         } else if(loading) Caption("正在本机整理使用记录…")
+        } else {
+        Caption("已勾选 ${selectedApps.size} 个分析应用")
+        TextButton(onClick={view=0}) {Text("选择分析应用 ›")}
         Section("使用计划")
         Secondary("手动安排下周") {onPlan(0)}
         val weekPlans=UsageWeekPlans.plans(activity.db).filter {it.optLong("end")>System.currentTimeMillis()}
@@ -112,7 +136,7 @@ private fun usageTime(millis:Long):String {
             val enabled=plan.optBoolean("enabled",true)
             Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
                 Text("${Rules.date(start)}—${Rules.date(plan.optLong("end")-1)}",Modifier.weight(1f),style=MaterialTheme.typography.titleMedium)
-                Switch(enabled,{ value ->activity.act {UsageWeekPlans.setEnabled(activity,start,value,System.currentTimeMillis())} },
+                GlassSwitch(enabled,{ value ->activity.act {UsageWeekPlans.setEnabled(activity,start,value,System.currentTimeMillis())} },
                     modifier=Modifier.semantics {contentDescription="${Rules.date(start)}的使用计划"})
             }
             Caption("${plan.optJSONArray("apps")?.length()?:0} 个应用 · "+
@@ -141,6 +165,7 @@ private fun usageTime(millis:Long):String {
             if(draft.optLong("start")<=System.currentTimeMillis()) Caption("建议日期已过；可查看内容，启用前需要重新生成。")
             Secondary("查看并调整建议") { review=draft }
             TextButton(onClick={deletingDraft=draft},enabled=activity.dataOperation.isEmpty()) {Text("清除建议")}
+        }
         }
     }
     }

@@ -19,6 +19,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -33,6 +34,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.Role
@@ -130,15 +132,7 @@ internal fun TimetableScreen(activity: ComposeMainActivity, onScrolled: (Boolean
     ScreenExitGuard(shownGrid != grid, Modifier.fillMaxWidth()) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
     if (!shownGrid) {
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            (1..7).forEach { number ->
-                val date = Timetable.date(week, number)
-                FilterChip(selected = day == number, onClick = { day = number },
-                    label = { Text("${"一二三四五六日"[number - 1]} ${date.dayOfMonth}") },
-                    modifier = Modifier.heightIn(min = 48.dp))
-            }
-        }
+        AgendaDayStrip(week, day, activity.motionEnabled) { day = it }
         AnimatedContent(targetState = "$week-$day", transitionSpec = {
             fadeIn(tween(if (activity.motionEnabled) AppMotion.stateChange else 0)) togetherWith
                 fadeOut(tween(if (activity.motionEnabled) AppMotion.outgoing else 0, easing = AppMotion.easing))
@@ -243,6 +237,48 @@ internal fun TimetableScreen(activity: ComposeMainActivity, onScrolled: (Boolean
             dismissButton = { TextButton(onClick = { csvPreview = null }) { Text("返回") } })
     }
     Spacer(Modifier.height(16.dp))
+    }
+}
+
+/** Seven dates fit the standard viewport; larger text gets a centered, scrollable selection. */
+@Composable
+internal fun AgendaDayStrip(week: Int, day: Int, motion: Boolean, onDay: (Int) -> Unit) {
+    val largeText = LocalDensity.current.fontScale > 1.25f
+    val scroll = rememberScrollState()
+    var viewportWidth by remember { mutableIntStateOf(0) }
+    val widths = remember { mutableStateMapOf<Int, Int>() }
+    val gap = with(LocalDensity.current) { 4.dp.roundToPx() }
+    LaunchedEffect(day, week, largeText, viewportWidth, widths.toMap()) {
+        if (largeText && viewportWidth > 0 && widths.size == 7) {
+            val center = (1 until day).sumOf { widths[it] ?: 0 } + gap * (day - 1) + (widths[day] ?: 0) / 2
+            val target = (center - viewportWidth / 2).coerceIn(0, scroll.maxValue)
+            if (motion) scroll.animateScrollTo(target) else scroll.scrollTo(target)
+        }
+    }
+    Row(Modifier.fillMaxWidth().onSizeChanged { viewportWidth = it.width }
+        .then(if (largeText) Modifier.horizontalScroll(scroll) else Modifier),
+        horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        (1..7).forEach { number ->
+            val date = Timetable.date(week, number)
+            Surface(modifier = (if (largeText) Modifier.width(72.dp) else Modifier.weight(1f))
+                    .heightIn(min = 48.dp).onSizeChanged { widths[number] = it.width }
+                    .testTag("timetable-day-$number").selectable(day == number,
+                        role = Role.Checkbox, interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                        indication = null, onClick = { onDay(number) }), shape = AppShapes.pill,
+                color = if (day == number) AppColors.current.navigationFill else MaterialTheme.colorScheme.surfaceVariant,
+                contentColor = if (day == number) AppColors.current.navigationInk else MaterialTheme.colorScheme.onSurfaceVariant,
+                border = BorderStroke(1.dp, if (day == number) AppColors.current.navigationFill else AppColors.current.secondaryBorder)) {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 2.dp, vertical = 4.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("${"一二三四五六日"[number - 1]}", Modifier.fillMaxWidth(), style = MaterialTheme.typography.labelMedium,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        maxLines = 1, softWrap = false)
+                    Text("${date.dayOfMonth}", Modifier.fillMaxWidth(), style = AppTypography.number, fontSize = 14.sp,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        maxLines = 1, softWrap = false)
+                }
+            }
+        }
     }
 }
 

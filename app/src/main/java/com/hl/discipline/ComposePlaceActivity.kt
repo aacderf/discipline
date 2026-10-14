@@ -30,6 +30,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -289,8 +291,14 @@ class ComposePlaceActivity : ComponentActivity() {
             }
         }
         BackHandler(onBack = handleBack)
-        Box(Modifier.fillMaxSize()) {
-            mapView?.let { view -> AndroidView(factory = { view }, modifier = Modifier.fillMaxSize()) }
+        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+            mapView?.let { view -> AndroidView(factory = { view }, modifier = Modifier.fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)) }
+            Box(Modifier.fillMaxWidth().align(androidx.compose.ui.Alignment.TopCenter)
+                .height(WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 24.dp)
+                .background(Brush.verticalGradient(listOf(
+                    MaterialTheme.colorScheme.background.copy(alpha = .9f),
+                    MaterialTheme.colorScheme.background.copy(alpha = 0f)))))
             if (step == 0) Surface(Modifier.align(androidx.compose.ui.Alignment.Center).size(42.dp),
                 shape = RoundedCornerShape(21.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = .92f)) {
                 Icon(painterResource(R.drawable.ic_target), contentDescription = "地图中心",
@@ -318,7 +326,7 @@ class ComposePlaceActivity : ComponentActivity() {
                     })
             })
             Column(Modifier.fillMaxWidth().align(androidx.compose.ui.Alignment.TopCenter)
-                .statusBarsPadding().padding(12.dp)) {
+                .statusBarsPadding().padding(12.dp), horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
                 Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surface) {
                     Column(Modifier.padding(10.dp)) {
                         if (!drawing) Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
@@ -367,24 +375,25 @@ class ComposePlaceActivity : ComponentActivity() {
                     val bounds = rect
                     if (picked && bounds != null) Caption("横向 %.0f 米 · 纵向 %.0f 米".format(Locale.CHINA,
                         bounds.width(), bounds.height()))
+                    if (undoBoundary != null || step == 2) Row(Modifier.fillMaxWidth(),
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        if (undoBoundary != null) TextButton(onClick = { undoBoundaryEdit() }) { Text("撤销选区修改") }
+                        Spacer(Modifier.weight(1f))
+                        if (step == 2) GlassSecondaryButton("清空选区", tone = GlassSecondaryTone.Destructive) { clearSelection() }
+                    }
                     if (step == 2 && vertices.isNotEmpty()) Row(Modifier.fillMaxWidth(),
                         verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                         TextButton(onClick = { selectVertex(if (selectedVertex <= 0) vertices.lastIndex else selectedVertex - 1) },
                             modifier = Modifier.size(48.dp).semantics { contentDescription = "上一个边界点" }) { Text("‹") }
-                        Text(if (selectedVertex in vertices.indices) "${selectedVertex + 1} / ${vertices.size}"
-                            else "点选边界点", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                        Text(if (selectedVertex in vertices.indices) "边界点 ${selectedVertex + 1} / ${vertices.size}"
+                            else "点选边界点 (${vertices.size})", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                         TextButton(onClick = { selectVertex((selectedVertex + 1) % vertices.size) },
                             modifier = Modifier.size(48.dp).semantics { contentDescription = "下一个边界点" }) { Text("›") }
                         TextButton(enabled = selectedVertex in vertices.indices && vertices.size > 3,
                             onClick = { removeSelectedVertex() }) { Text("删除选点", color = if (selectedVertex in vertices.indices && vertices.size > 3)
                                 MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant) }
                     }
-                    if (undoBoundary != null || step == 2) Row(Modifier.fillMaxWidth(),
-                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                        if (undoBoundary != null) TextButton(onClick = { undoBoundaryEdit() }) { Text("撤销选区修改") }
-                        Spacer(Modifier.weight(1f))
-                        if (step == 2) TextButton(onClick = { clearSelection() }) { Text("清空选区") }
-                    }
+                    if (step == 2) Spacer(Modifier.height(12.dp))
                     when (step) {
                         0 -> Primary("手绘圈选范围", Modifier.fillMaxWidth()) { beginTrace() }
                         1 -> Secondary("取消绘制") { cancelTrace() }

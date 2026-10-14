@@ -63,6 +63,7 @@ internal class CompanionBallView(
     override fun performClick(): Boolean { super.performClick(); onTap(); return true }
 
     fun updateStatus(isDark: Boolean, progress: Float, state: String) {
+        val phaseChanged = phase != state
         if (dark != isDark) { dark = isDark; cacheSurface() }
         val next = progress.coerceIn(0f, 1f)
         if (phase != state || targetFraction != next) {
@@ -78,6 +79,7 @@ internal class CompanionBallView(
             targetFraction = next
         }
         phase = state
+        if (phaseChanged) refreshStateDescription()
         invalidate()
     }
 
@@ -86,6 +88,7 @@ internal class CompanionBallView(
         expanded = value
         contentDescription = if (value) "自律悬浮球，点按收起面板，双击隐藏" else
             "自律悬浮球，点按查看，双击隐藏，拖动调整位置"
+        refreshStateDescription()
         expansionAnimator?.cancel()
         val target = if (value) 1f else 0f
         if (!animate || !motion()) { expansion = target; invalidate(); return }
@@ -122,9 +125,18 @@ internal class CompanionBallView(
     }
     override fun onInitializeAccessibilityNodeInfo(info: AccessibilityNodeInfo) {
         super.onInitializeAccessibilityNodeInfo(info)
+        info.contentDescription = contentDescription
+        val state = "${if (phase.isBlank()) "尚未开始专注" else companionPhase(phase)}，面板${if (expanded) "已展开" else "已收起"}"
+        if (android.os.Build.VERSION.SDK_INT >= 30) info.stateDescription = state
+        else info.contentDescription = "$contentDescription，$state"
         info.className = "android.widget.Button"
         info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_CLICK)
         info.addAction(AccessibilityNodeInfo.AccessibilityAction(AccessibilityNodeInfo.ACTION_LONG_CLICK, "隐藏悬浮球"))
+    }
+    private fun refreshStateDescription() {
+        if (android.os.Build.VERSION.SDK_INT >= 30)
+            stateDescription = "${if (phase.isBlank()) "尚未开始专注" else companionPhase(phase)}，面板${if (expanded) "已展开" else "已收起"}"
+        if (isAttachedToWindow) sendAccessibilityEvent(android.view.accessibility.AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED)
     }
     override fun performAccessibilityAction(action: Int, args: android.os.Bundle?): Boolean {
         if (action == AccessibilityNodeInfo.ACTION_LONG_CLICK) { onHide(); return true }

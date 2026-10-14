@@ -10,6 +10,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.Crossfade
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.animateColorAsState
@@ -132,6 +134,7 @@ internal fun FocusScreen(activity: ComposeMainActivity, nav: NavHostController, 
         (0 until rules.length()).count { rules.optJSONObject(it)?.optBoolean("enabled", true) == true }
     }
     var preferencesOpen by rememberSaveable { mutableStateOf(false) }
+    var taskPicker by remember { mutableStateOf(false) }
     BoxWithConstraints(Modifier.fillMaxSize().imePadding()) {
         val compactWindow = maxHeight < 580.dp || LocalDensity.current.fontScale > 1.15f
         Column(Modifier.fillMaxSize()) {
@@ -140,7 +143,13 @@ internal fun FocusScreen(activity: ComposeMainActivity, nav: NavHostController, 
                 verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs),
                     verticalAlignment = Alignment.CenterVertically) {
-                    Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                     if (focus == null) Row(Modifier.weight(1f).heightIn(min = 48.dp)
+                         .testTag("focus-task-selector").quietClickable("选择关联任务") { taskPicker = true },
+                         verticalAlignment = Alignment.CenterVertically) {
+                         Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium,
+                             maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                         DisclosureMark(taskPicker)
+                     } else Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
                     Row(Modifier.heightIn(min = 48.dp).testTag("focus-app-limits")
                         .quietClickable("管理每日与每周应用限额") { nav.navigate("app-limits") }
                         .padding(horizontal = AppSpacing.xs).semantics {
@@ -153,13 +162,12 @@ internal fun FocusScreen(activity: ComposeMainActivity, nav: NavHostController, 
                     }
                 }
                 if (location != null) Caption("地点 · $location")
-                CompanionSettings(activity)
                 val forwardWork = focus?.optBoolean("forward") == true &&
                     (phase == "work" || (phase == "paused" && focus.optString("pausedPhase") != "break"))
                 val time = if (focus == null) (minutes.toLongOrNull() ?: 0) * Rules.MINUTE else
                     if (phase == "ready") focus.optLong("minutes") * Rules.MINUTE else
                         if (forwardWork) focus.optLong("total") else focus.optLong("remaining")
-                Panel {
+                FocusInstrumentPanel {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically) {
                         val cycleCount = focus?.optInt("cycles", settings.optInt("cycles", 4))?.coerceAtLeast(1)
@@ -204,13 +212,13 @@ internal fun FocusScreen(activity: ComposeMainActivity, nav: NavHostController, 
                         Text(if (forwardWork) "已专注" else "剩余时间", fontSize = 13.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelMedium)
                         Text(countdown(time), Modifier.testTag("focus-time"),
-                            fontSize = if (compact) 48.sp else 54.sp, maxLines = 1, softWrap = false,
+                            fontSize = if (compactWindow && largeType) 36.sp else if (compact) 48.sp else 54.sp, maxLines = 1, softWrap = false,
                             fontWeight = FontWeight.Bold, style = AppTypography.number,
                             color = MaterialTheme.colorScheme.onSurface)
                         Text("本轮进度 ${(fraction * 100).toInt()}%", color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 13.sp, style = MaterialTheme.typography.labelMedium)
                     }
-                    if (compactWindow && largeType) {
+                    if (compactWindow) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
                             HourglassInstrument({ ring.value }, presentation.hourglass, compact, motion, richMotion,
@@ -230,11 +238,27 @@ internal fun FocusScreen(activity: ComposeMainActivity, nav: NavHostController, 
                         phase == "paused" -> "继续后更新预计结束时间"
                         else -> "预计 ${SimpleDateFormat("HH:mm", Locale.CHINA).format(Date(System.currentTimeMillis() + time))} 结束"
                     }
-                    Caption(expected)
+                    Box(Modifier.fillMaxWidth().height(24.dp)) {
+                        Text(expected, style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                    }
                 }
-                if (focus != null) {
-                    Caption("累计专注 ${duration(focus.optLong("total"))} · 下一段${if (phase == "break") "专注" else "休息"}")
-                } else {
+                val summary = if (focus != null)
+                    "累计专注 ${duration(focus.optLong("total"))} · 下一段${if (phase == "break") "专注" else "休息"}"
+                    else "按自己的节奏，开始这一轮专注。"
+                Box(Modifier.fillMaxWidth().height(32.dp)) {
+                    if (!motion) Caption(summary)
+                    else Crossfade(summary, animationSpec = tween(AppMotion.state, easing = AppMotion.easing),
+                        label = "专注说明原位切换") { shown ->
+                        ScreenExitGuard(shown != summary, Modifier.fillMaxWidth()) {
+                            Text(shown, style = MaterialTheme.typography.labelMedium, maxLines = 1,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                        }
+                    }
+                }
+                if (focus == null) {
                     Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).testTag("focus-preferences")
                         .quietClickable(if (preferencesOpen) "收起本次配置" else "调整本次配置") {
                             preferencesOpen = !preferencesOpen
@@ -290,10 +314,12 @@ internal fun FocusScreen(activity: ComposeMainActivity, nav: NavHostController, 
                         }
                     }
                 }
+                CompanionSettings(activity)
                 Spacer(Modifier.height(AppSpacing.xs))
             }
             // Actions stay in the available viewport, independent of instrument/config scroll.
-            Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background)
+            Column(Modifier.fillMaxWidth().height(if (LocalDensity.current.fontScale > 1.15f) 136.dp else 80.dp)
+                .background(MaterialTheme.colorScheme.background)
                 .testTag("focus-actions").padding(horizontal = AppSpacing.page, vertical = AppSpacing.sm),
                 verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
                 if (focus == null) GlassPrimaryButton(presentation.action, Modifier.fillMaxWidth(), iconRes = presentation.icon) {
@@ -322,6 +348,20 @@ internal fun FocusScreen(activity: ComposeMainActivity, nav: NavHostController, 
             }
         }
     }
+    AppModalSheet(taskPicker && focus == null, onDismiss = { taskPicker = false }) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = AppSpacing.page).padding(bottom = AppSpacing.lg)
+            .heightIn(max = editorSheetHeight()).verticalScroll(rememberScrollState())) {
+            Text("选择关联任务", style = MaterialTheme.typography.titleLarge)
+            (listOf("" to "自由专注") + tasks.map { it.optString("id") to it.optString("name") }).forEach { (id, name) ->
+                Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).quietClickable("选择$name") {
+                    activity.selectFocusTask(id); taskPicker = false
+                }.padding(vertical = AppSpacing.xs), verticalAlignment = Alignment.CenterVertically) {
+                    Text(name, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+                    if (id == taskId) Text("✓", color = MaterialTheme.colorScheme.primary)
+                }
+            }
+        }
+    }
     AppPicker(activity, apps, picker, { picker = false }) { activity.focusApps = it; picker = false }
     if (confirmEnd) ConfirmDialog("结束本次专注？", "结束计时，已记录的有效专注时长会保留。", {
         if (activity.act { activity.engine.endFocus() }) confirmEnd = false
@@ -329,7 +369,17 @@ internal fun FocusScreen(activity: ComposeMainActivity, nav: NavHostController, 
 }
 
 @Composable
-internal fun StatsScreen(activity: ComposeMainActivity, nav: NavHostController) {
+private fun FocusInstrumentPanel(content: @Composable ColumnScope.() -> Unit) {
+    Surface(Modifier.fillMaxWidth(), shape = AppShapes.card, color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = .48f))) {
+        Column(Modifier.padding(horizontal = AppSpacing.md, vertical = AppSpacing.xs),
+            verticalArrangement = Arrangement.spacedBy(AppSpacing.xs), content = content)
+    }
+}
+
+@Composable
+internal fun StatsScreen(activity: ComposeMainActivity, nav: NavHostController,
+                         scrollState: ScrollState = rememberScrollState()) {
     val revision = activity.revision
     var selectedRange by rememberSaveable { mutableIntStateOf(7) }
     val motion = richMotionEnabled()
@@ -345,9 +395,14 @@ internal fun StatsScreen(activity: ComposeMainActivity, nav: NavHostController) 
         catch (_: Exception) { error = "统计暂时无法更新，原始记录仍保留。" }
         finally { loading = false }
     }
+    Column(Modifier.fillMaxSize()) {
+    Box(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).padding(bottom = 8.dp)) {
     DraggableSegment(listOf("今天", "本周", "本月"), when (selectedRange) { 1 -> 0; 7 -> 1; else -> 2 }, activity.motionEnabled) {
         selectedRange = listOf(1, 7, 30)[it]
     }
+    }
+    Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(scrollState)
+        .padding(bottom = AppSpacing.lg), verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) content@{
     Secondary("应用使用与下周计划") { nav.navigate("usage-insights") }
     if (error.isNotEmpty()) {
         Caption(error)
@@ -357,7 +412,7 @@ internal fun StatsScreen(activity: ComposeMainActivity, nav: NavHostController) 
     if (data == null) {
         Panel { Text("本期概览", style = MaterialTheme.typography.titleMedium)
             Caption(if (loading) "正在整理本地计时与任务记录…" else "可稍后重试，计划和计时不受影响。") }
-        return
+        return@content
     }
     val range = data.range
     val start = data.start
@@ -366,33 +421,12 @@ internal fun StatsScreen(activity: ComposeMainActivity, nav: NavHostController) 
     val done = data.done
     val failed = data.failed
     val review = data.review
-    if (loading) Caption("正在更新统计，以下保留上次结果。")
-    val empty = data.empty
-    var emptyVisible by rememberSaveable { mutableStateOf(!motion) }
-    LaunchedEffect(empty, motion) { emptyVisible = empty }
-    if (empty) {
-        AnimatedVisibility(emptyVisible, enter = fadeIn(tween(if (motion) AppMotion.statsEmpty else 0, easing = AppMotion.easing)) +
-            slideInVertically(tween(if (motion) AppMotion.statsEmpty else 0, easing = AppMotion.easing), initialOffsetY = { it / 12 })) {
-            Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
-                Panel {
-                    Image(painterResource(R.drawable.empty_stats_mist), contentDescription = null,
-                        modifier = Modifier.fillMaxWidth().height(120.dp))
-                    Text("还没有专注记录", fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
-                    Caption("开始一次专注，查看时长与任务进度。")
-                }
-                Primary("开始专注") { activity.openTab("focus", nav) }
-            }
-        }
-        return
-    }
-    Caption("统计范围 · ${timeText(start)} 至现在")
+    StatsRangeLine("统计范围 · ${timeText(start)} 至现在", loading)
     Panel {
         Text("本期概览", style = MaterialTheme.typography.titleMedium)
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
+        Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.xxs)) {
             Caption("专注时长")
             AnimatedStatDuration(focus, motion, "专注时长")
-            Caption(if (focus >= 60 * Rules.MINUTE) "小时:分钟" else "分钟")
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
             Column(Modifier.weight(1f)) {
@@ -414,13 +448,13 @@ internal fun StatsScreen(activity: ComposeMainActivity, nav: NavHostController) 
     Panel {
         Caption(if (range == 1) "今天 · 每 4 小时" else if (range == 7) "本周 · 每天" else "本月 · 每天")
         Caption("单位：分钟 · 薄荷柱表示有效专注时长")
+        var selected by remember(range, data.start) { mutableIntStateOf(rows.indices.maxByOrNull { rows[it].focus } ?: 0) }
+        FocusDurationChart(rows, selected, range, motion, onStartFocus = { activity.openTab("focus", nav) }) { selected = it }
         if (rows.any { it.focus > 0 }) {
-            var selected by remember(range, data.start) { mutableIntStateOf(rows.indices.maxByOrNull { rows[it].focus } ?: 0) }
-            FocusDurationChart(rows, selected, range, motion) { selected = it }
             Caption("${rows[selected].label} · 专注 ${duration(rows[selected].focus)}")
             val peak = rows.maxByOrNull { it.focus }
             if (peak != null) Caption("本期专注最多的是 ${peak.label}，共 ${duration(peak.focus)}。")
-        } else Caption("本期暂无专注记录。完成一次专注后显示时长。")
+        }
     }
     Section("任务完成")
     Panel {
@@ -478,11 +512,35 @@ internal fun StatsScreen(activity: ComposeMainActivity, nav: NavHostController) 
         else -> "本期已完成 $done 项任务。" })
     Secondary("查看操作与异常记录") { nav.navigate("events") }
     Secondary("导出统计 CSV") { activity.exportCsv() }
+    }
+    }
+}
+
+@Composable
+internal fun StatsRangeLine(label: String, loading: Boolean) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 24.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, Modifier.weight(1f), style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+        if (loading) Text(" · 正在更新…", style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+    }
 }
 
 @Composable
 internal fun FocusDurationChart(rows: List<ChartRow>, selected: Int, range: Int, motion: Boolean,
+                               onStartFocus: (() -> Unit)? = null,
                                onSelect: (Int) -> Unit) {
+    if (rows.none { it.focus > 0 }) {
+        Column(Modifier.fillMaxWidth().testTag("focus-duration-chart")
+            .padding(vertical = AppSpacing.sm), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
+            Caption("本周期还没有有效专注记录，前往「专注」开始计时后将在此按时段汇总。")
+            if (onStartFocus != null) TextButton(onClick = onStartFocus, modifier = Modifier.heightIn(min = 48.dp)) {
+                Text("前往专注 ›")
+            }
+        }
+        return
+    }
     val slot = 48.dp
     val maxMinutes = rows.maxOf { (it.focus / Rules.MINUTE).toInt() }.coerceAtLeast(1)
     val axisTop = ((maxMinutes + 29) / 30) * 30
@@ -530,8 +588,7 @@ internal fun FocusDurationChart(rows: List<ChartRow>, selected: Int, range: Int,
                     .testTag("chart-selection-label"),
                     shape = AppShapes.pill, color = MaterialTheme.colorScheme.secondaryContainer) {
                     AnimatedContent(rows[selected].focus / Rules.MINUTE, transitionSpec = {
-                        fadeIn(tween(if (motion) AppMotion.state else 0)) togetherWith
-                            fadeOut(tween(if (motion) AppMotion.outgoing else 0))
+                        staggeredTextTransform(motion)
                     }, label = "所选时长", modifier = Modifier.clearAndSetSemantics {
                         contentDescription = "${rows[selected].label}专注${duration(rows[selected].focus)}"
                     }) { minutes ->
@@ -588,16 +645,27 @@ private fun ChartAxisLabel(value: State<Float>, fraction: Float) {
 }
 
 @Composable
-private fun AnimatedStatDuration(actualMs: Long, motion: Boolean, label: String) {
+internal fun AnimatedStatDuration(actualMs: Long, motion: Boolean, label: String) {
     val actualMinutes = (actualMs / Rules.MINUTE).coerceIn(0, Int.MAX_VALUE.toLong()).toInt()
-    var target by rememberSaveable { mutableIntStateOf(if (motion) 0 else actualMinutes) }
-    LaunchedEffect(actualMinutes, motion) { target = actualMinutes }
-    val shown by animateIntAsState(target,
-        tween(if (motion) AppMotion.statsNumber else 0, easing = AppMotion.easing), label = label)
-    Text(if (actualMinutes >= 60) "%d:%02d".format(Locale.CHINA, shown / 60, shown % 60)
-        else "$shown", fontSize = 21.sp,
-        fontWeight = FontWeight.Bold, style = AppTypography.number,
-        modifier = Modifier.clearAndSetSemantics { contentDescription = "$label ${duration(actualMs)}" })
+    val content: @Composable (Int) -> Unit = { shown ->
+        ScreenExitGuard(shown != actualMinutes, Modifier.wrapContentSize()) {
+            Row(Modifier.clearAndSetSemantics { contentDescription = "$label ${duration(actualMs)}" },
+                horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (shown >= 60) {
+                    Text("${shown / 60}", Modifier.alignByBaseline(), style = AppTypography.number,
+                        fontSize = 28.sp, fontWeight = FontWeight.Bold)
+                    Text("小时", Modifier.alignByBaseline(), style = MaterialTheme.typography.labelMedium)
+                }
+                Text("${if (shown >= 60) shown % 60 else shown}", Modifier.alignByBaseline(),
+                    style = AppTypography.number, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+                Text(if (shown >= 60) "分" else "分钟", Modifier.alignByBaseline(),
+                    style = MaterialTheme.typography.labelMedium)
+            }
+        }
+    }
+    if (!motion) content(actualMinutes)
+    else AnimatedContent(actualMinutes, transitionSpec = { staggeredTextTransform(true) },
+        label = label, content = { content(it) })
 }
 
 @Composable

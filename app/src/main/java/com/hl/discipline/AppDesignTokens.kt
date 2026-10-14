@@ -10,7 +10,10 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.ExperimentalTextApi
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -63,7 +66,7 @@ private val LightPalette = AppPalette(
     glassButtonFill = Color(0xEDF7FAF9), glassButtonPressed = Color(0xFFDCEFE9),
     glassButtonBorder = Color(0xFFB8CDC7),
     iconPressed = Color(0xFFDCEFE9), iconBorder = Color(0xFFD8E4E0),
-    disabledText = Color(0xFF5F706B), glassTintAlpha = .92f,
+    disabledText = Color(0xFF52645D), glassTintAlpha = .92f,
     glassBorder = Color(0xFFD8E4E0),
     focusDial = Color(0xFF294540), focusDialText = Color(0xFFEFF6F3),
     chartFocus = Color(0xFF76BDB4), chartPresence = Color(0xFF91AFC8),
@@ -80,10 +83,10 @@ private val DarkPalette = AppPalette(
     secondaryFill = Color(0xF526393A), secondaryPressed = Color(0xFF30524E),
     secondaryDisabled = Color(0xFF2B3939), secondaryText = Color(0xFFCDDBD6),
     secondaryBorder = Color(0xFF536D68), secondaryHighlight = Color(0x26FFFFFF),
-    glassButtonFill = Color(0xED1F3031), glassButtonPressed = Color(0xFF30524E),
+    glassButtonFill = Color(0xFF293D3D), glassButtonPressed = Color(0xFF30524E),
     glassButtonBorder = Color(0xFF536D68),
     iconPressed = Color(0xFF30524E), iconBorder = Color(0xFF3A5551),
-    disabledText = Color(0xFFA1B5AF), glassTintAlpha = .92f,
+    disabledText = Color(0xFFBDD0C9), glassTintAlpha = .92f,
     glassBorder = Color(0xFF3A5551),
     focusDial = Color(0xFF203638), focusDialText = Color(0xFFEFF6F3),
     chartFocus = Color(0xFF92CFC3), chartPresence = Color(0xFF9AB9D3),
@@ -103,7 +106,7 @@ internal object AppColors {
 
     fun scheme(dark: Boolean): ColorScheme = if (dark) darkColorScheme(
         primary = Color(0xFFA9DCD1), onPrimary = ink, background = Color(0xFF111B1C),
-        onBackground = Color(0xFFEFF6F3), surface = Color(0xFF1F3031),
+        onBackground = Color(0xFFEFF6F3), surface = Color(0xFF293D3D),
         onSurface = Color(0xFFEFF6F3), surfaceVariant = Color(0xFF26393A),
         onSurfaceVariant = Color(0xFFA1B5AF), outline = Color(0xFF3A5551),
         secondary = Color(0xFF9AB9D3), onSecondary = ink,
@@ -124,20 +127,41 @@ internal object AppColors {
     )
 }
 
+// Headings intentionally have their own family; no handwriting resource is currently bundled.
+internal val TitleFontFamily: FontFamily = FontFamily.Serif
+
+// Bundle Latin and Chinese glyphs together so an OEM's themed fallback cannot replace body text.
+// The app's minSdk is 26, which supports this single variable font at every configured weight.
+@OptIn(ExperimentalTextApi::class)
+internal val BodyFontFamily = FontFamily(listOf(
+    FontWeight.Normal, FontWeight.Medium, FontWeight.SemiBold, FontWeight.Bold
+).map { weight ->
+    Font(R.font.noto_sans_sc, weight = weight,
+        variationSettings = FontVariation.Settings(FontVariation.weight(weight.weight)))
+})
+
 internal object AppTypography {
     val material = Typography(
-        headlineMedium = TextStyle(fontSize = 29.sp, lineHeight = 36.sp, fontWeight = FontWeight.Bold),
-        titleLarge = TextStyle(fontSize = 23.sp, lineHeight = 30.sp, fontWeight = FontWeight.SemiBold),
-        titleMedium = TextStyle(fontSize = 18.sp, lineHeight = 25.sp, fontWeight = FontWeight.SemiBold, fontFamily = FontFamily.SansSerif),
-        bodyLarge = TextStyle(fontSize = 16.sp, lineHeight = 24.sp, fontFamily = FontFamily.SansSerif),
-        bodyMedium = TextStyle(fontSize = 15.sp, lineHeight = 22.sp, fontFamily = FontFamily.SansSerif),
-        labelMedium = TextStyle(fontSize = 13.sp, lineHeight = 19.sp, fontFamily = FontFamily.SansSerif),
-        labelLarge = TextStyle(fontSize = 15.sp, lineHeight = 21.sp, fontWeight = FontWeight.SemiBold, fontFamily = FontFamily.SansSerif)
+        displayLarge = TextStyle(fontSize = 48.sp, lineHeight = 56.sp, fontFamily = TitleFontFamily),
+        displayMedium = TextStyle(fontSize = 40.sp, lineHeight = 48.sp, fontFamily = TitleFontFamily),
+        displaySmall = TextStyle(fontSize = 34.sp, lineHeight = 42.sp, fontFamily = TitleFontFamily),
+        headlineLarge = TextStyle(fontSize = 32.sp, lineHeight = 40.sp, fontWeight = FontWeight.Bold, fontFamily = TitleFontFamily),
+        headlineMedium = TextStyle(fontSize = 29.sp, lineHeight = 36.sp, fontWeight = FontWeight.Bold, fontFamily = TitleFontFamily),
+        headlineSmall = TextStyle(fontSize = 24.sp, lineHeight = 32.sp, fontWeight = FontWeight.SemiBold, fontFamily = BodyFontFamily),
+        titleLarge = TextStyle(fontSize = 23.sp, lineHeight = 30.sp, fontWeight = FontWeight.SemiBold, fontFamily = TitleFontFamily),
+        titleMedium = TextStyle(fontSize = 18.sp, lineHeight = 25.sp, fontWeight = FontWeight.SemiBold, fontFamily = BodyFontFamily),
+        titleSmall = TextStyle(fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold, fontFamily = BodyFontFamily),
+        bodyLarge = TextStyle(fontSize = 16.sp, lineHeight = 24.sp, fontFamily = BodyFontFamily),
+        bodyMedium = TextStyle(fontSize = 15.sp, lineHeight = 22.sp, fontFamily = BodyFontFamily),
+        bodySmall = TextStyle(fontSize = 12.sp, lineHeight = 18.sp, fontFamily = BodyFontFamily),
+        labelLarge = TextStyle(fontSize = 15.sp, lineHeight = 21.sp, fontWeight = FontWeight.SemiBold, fontFamily = BodyFontFamily),
+        labelMedium = TextStyle(fontSize = 13.sp, lineHeight = 19.sp, fontFamily = BodyFontFamily),
+        labelSmall = TextStyle(fontSize = 11.sp, lineHeight = 16.sp, fontFamily = BodyFontFamily)
     )
-    val primaryButton = TextStyle(fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold, fontFamily = FontFamily.SansSerif)
-    val secondaryButton = TextStyle(fontSize = 15.sp, lineHeight = 21.sp, fontWeight = FontWeight.SemiBold, fontFamily = FontFamily.SansSerif)
-    val pill = TextStyle(fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold, fontFamily = FontFamily.SansSerif)
-    val number = TextStyle(fontFeatureSettings = "tnum", fontFamily = FontFamily.SansSerif)
+    val primaryButton = TextStyle(fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold, fontFamily = BodyFontFamily)
+    val secondaryButton = TextStyle(fontSize = 15.sp, lineHeight = 21.sp, fontWeight = FontWeight.SemiBold, fontFamily = BodyFontFamily)
+    val pill = TextStyle(fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold, fontFamily = BodyFontFamily)
+    val number = TextStyle(fontFeatureSettings = "tnum", fontFamily = BodyFontFamily)
 }
 
 internal object AppSpacing {
